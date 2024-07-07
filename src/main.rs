@@ -16,6 +16,8 @@ enum Token {
     MINUS,
     PLUS,
     SEMICOLON,
+    EQUAL,
+    EQUAL_EQUAL,
     EOF,
 }
 
@@ -59,15 +61,38 @@ fn main() {
 
 
                     chars.push(c);
+                    // match tokens.get(chars.as_slice()) {
+                    //     None => {}
+                    //     Some(token) => {
+                    //         chars.clear();
+                    //         print_token(c, token);
+                    //     }
+                    // }
                     match tokens.get(chars.as_slice()) {
-                        None => {}
-                        Some(token) => {
-                            chars.clear();
-                            print_token(c, token);
+                        None => {
+                            let prev = &chars.as_slice()[..chars.len() - 1];
+                            match tokens.get(prev) {
+                                None => {}
+                                Some(token) => {
+                                    print_token(prev, token);
+                                    chars.clear();
+                                    chars.push(c);
+                                }
+                            };
                         }
+                        Some(_) => {}
                     }
                 }
             }
+
+            match tokens.get(chars.as_slice()) {
+                None => {}
+                Some(token) => {
+                    print_token(chars.as_slice(), token);
+                    chars.clear();
+                }
+            }
+
             if !chars.is_empty() {
                 panic!("cannot find token for {:?}", chars)
             }
@@ -96,6 +121,8 @@ fn get_tokens_map() -> HashMap<Box<[char]>, Token> {
     tokens.insert(str_to_slice("-"), Token::MINUS);
     tokens.insert(str_to_slice("+"), Token::PLUS);
     tokens.insert(str_to_slice(";"), Token::SEMICOLON);
+    tokens.insert(str_to_slice("="), Token::EQUAL);
+    tokens.insert(str_to_slice("=="), Token::EQUAL_EQUAL);
     tokens
 }
 
@@ -111,11 +138,17 @@ fn get_allowed_chars_set() -> HashSet<char> {
     chars.insert('-');
     chars.insert('+');
     chars.insert(';');
+    chars.insert('=');
     chars
 }
 
-fn print_token(x: char, token: &Token) {
-    println!("{:?} {x} null", token)
+fn print_token(chars: &[char], token: &Token) {
+    // println!("{:?} {x} null", token)
+    print!("{:?} ", token);
+    for c in chars {
+        print!("{c}");
+    }
+    println!(" null");
 }
 
 fn str_to_slice(s: &str) -> Box<[char]> {

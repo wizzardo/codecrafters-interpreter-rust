@@ -20,6 +20,10 @@ enum Token {
     EQUAL_EQUAL,
     BANG,
     BANG_EQUAL,
+    LESS,
+    LESS_EQUAL,
+    GREATER,
+    GREATER_EQUAL,
     EOF,
 }
 
@@ -135,6 +139,10 @@ fn get_tokens_map() -> HashMap<Box<[char]>, Token> {
     tokens.insert(str_to_slice("=="), Token::EQUAL_EQUAL);
     tokens.insert(str_to_slice("!"), Token::BANG);
     tokens.insert(str_to_slice("!="), Token::BANG_EQUAL);
+    tokens.insert(str_to_slice("<"), Token::LESS);
+    tokens.insert(str_to_slice("<="), Token::LESS_EQUAL);
+    tokens.insert(str_to_slice(">"), Token::GREATER);
+    tokens.insert(str_to_slice(">="), Token::GREATER_EQUAL);
     tokens
 }
 
@@ -152,6 +160,8 @@ fn get_allowed_chars_set() -> HashSet<char> {
     chars.insert(';');
     chars.insert('=');
     chars.insert('!');
+    chars.insert('<');
+    chars.insert('>');
     chars
 }
 

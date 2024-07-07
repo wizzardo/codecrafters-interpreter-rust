@@ -18,6 +18,8 @@ enum Token {
     SEMICOLON,
     EQUAL,
     EQUAL_EQUAL,
+    BANG,
+    BANG_EQUAL,
     EOF,
 }
 
@@ -56,6 +58,14 @@ fn main() {
                     if !allowed_chars.contains(&c) {
                         writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
                         has_lexical_errors = true;
+
+                        match tokens.get(chars.as_slice()) {
+                            None => {}
+                            Some(token) => {
+                                print_token(chars.as_slice(), token);
+                                chars.clear();
+                            }
+                        }
                         continue;
                     }
 
@@ -123,6 +133,8 @@ fn get_tokens_map() -> HashMap<Box<[char]>, Token> {
     tokens.insert(str_to_slice(";"), Token::SEMICOLON);
     tokens.insert(str_to_slice("="), Token::EQUAL);
     tokens.insert(str_to_slice("=="), Token::EQUAL_EQUAL);
+    tokens.insert(str_to_slice("!"), Token::BANG);
+    tokens.insert(str_to_slice("!="), Token::BANG_EQUAL);
     tokens
 }
 
@@ -139,6 +151,7 @@ fn get_allowed_chars_set() -> HashSet<char> {
     chars.insert('+');
     chars.insert(';');
     chars.insert('=');
+    chars.insert('!');
     chars
 }
 

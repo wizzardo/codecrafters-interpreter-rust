@@ -91,8 +91,10 @@ fn main() {
                                 chars.clear();
                             }
                         }
-                        writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
-                        has_lexical_errors = true;
+                        if c != ' ' && c != '\t' {
+                            writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
+                            has_lexical_errors = true;
+                        }
                         continue;
                     }
 

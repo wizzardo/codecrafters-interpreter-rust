@@ -7,6 +7,8 @@ use std::io::{self, Write};
 enum Token{
     LEFT_PAREN,
     RIGHT_PAREN,
+    LEFT_BRACE,
+    RIGHT_BRACE,
     EOF
 }
 
@@ -36,15 +38,19 @@ fn main() {
                         ')' => {
                             println!("{:?} {x} null", Token::RIGHT_PAREN)
                         }
+                        '}' => {
+                            println!("{:?} {x} null", Token::RIGHT_BRACE)
+                        }
+                        '{' => {
+                            println!("{:?} {x} null", Token::LEFT_BRACE)
+                        }
                         _ => {
                             panic!("unsupported char {x}")
                         }
                     }
                 }
-                println!("{:?}  null", Token::EOF)
-            } else {
-                println!("EOF  null"); // Placeholder, remove this line when implementing the scanner
             }
+            println!("{:?}  null", Token::EOF)
         }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();

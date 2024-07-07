@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
 
 #[derive(Debug, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
-enum Token{
+enum Token {
     LEFT_PAREN,
     RIGHT_PAREN,
     LEFT_BRACE,
@@ -16,7 +16,7 @@ enum Token{
     MINUS,
     PLUS,
     SEMICOLON,
-    EOF
+    EOF,
 }
 
 fn main() {
@@ -30,6 +30,8 @@ fn main() {
     let filename = &args[2];
 
     let tokens = get_tokens_map();
+    let allowed_chars = get_allowed_chars_set();
+    let mut has_lexical_errors = false;
 
     match command.as_str() {
         "tokenize" => {
@@ -39,15 +41,29 @@ fn main() {
             });
 
             let mut chars = vec![];
+            let mut line_number = 1;
+            let mut _position = 0;
 
             if !file_contents.is_empty() {
-                for x in file_contents.chars() {
-                    chars.push(x);
+                for c in file_contents.chars() {
+                    _position += 1;
+                    if c == '\n' {
+                        line_number += 1;
+                        _position = 0;
+                    }
+                    if !allowed_chars.contains(&c) {
+                        writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
+                        has_lexical_errors = true;
+                        continue;
+                    }
+
+
+                    chars.push(c);
                     match tokens.get(chars.as_slice()) {
                         None => {}
                         Some(token) => {
                             chars.clear();
-                            print_token(x, token);
+                            print_token(c, token);
                         }
                     }
                 }
@@ -61,6 +77,10 @@ fn main() {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
             return;
         }
+    }
+
+    if has_lexical_errors {
+        std::process::exit(65);
     }
 }
 
@@ -77,6 +97,21 @@ fn get_tokens_map() -> HashMap<Box<[char]>, Token> {
     tokens.insert(str_to_slice("+"), Token::PLUS);
     tokens.insert(str_to_slice(";"), Token::SEMICOLON);
     tokens
+}
+
+fn get_allowed_chars_set() -> HashSet<char> {
+    let mut chars: HashSet<char> = HashSet::new();
+    chars.insert('(');
+    chars.insert(')');
+    chars.insert('{');
+    chars.insert('}');
+    chars.insert('*');
+    chars.insert('.');
+    chars.insert(',');
+    chars.insert('-');
+    chars.insert('+');
+    chars.insert(';');
+    chars
 }
 
 fn print_token(x: char, token: &Token) {

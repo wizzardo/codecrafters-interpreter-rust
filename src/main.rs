@@ -24,6 +24,8 @@ enum Token {
     LESS_EQUAL,
     GREATER,
     GREATER_EQUAL,
+    SLASH,
+    COMMENT,
     EOF,
 }
 
@@ -51,6 +53,7 @@ fn main() {
             let mut chars = vec![];
             let mut line_number = 1;
             let mut _position = 0;
+            let mut skip_until_next_line = false;
 
             if !file_contents.is_empty() {
                 for c in file_contents.chars() {
@@ -58,39 +61,57 @@ fn main() {
                     if c == '\n' {
                         line_number += 1;
                         _position = 0;
-                    }
-                    if !allowed_chars.contains(&c) {
-                        writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
-                        has_lexical_errors = true;
+                        skip_until_next_line=false;
 
                         match tokens.get(chars.as_slice()) {
                             None => {}
                             Some(token) => {
-                                print_token(chars.as_slice(), token);
+                                if token != &Token::COMMENT {
+                                    print_token(chars.as_slice(), token);
+                                }
                                 chars.clear();
                             }
                         }
+                        continue
+                    }
+                    if skip_until_next_line {
+                        continue
+                    }
+
+                    if !allowed_chars.contains(&c) {
+                        match tokens.get(chars.as_slice()) {
+                            None => {}
+                            Some(token) => {
+                                if token == &Token::COMMENT {
+                                    skip_until_next_line = true;
+                                    continue;
+                                } else {
+                                    print_token(chars.as_slice(), token);
+                                }
+                                chars.clear();
+                            }
+                        }
+                        writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
+                        has_lexical_errors = true;
                         continue;
                     }
 
 
                     chars.push(c);
-                    // match tokens.get(chars.as_slice()) {
-                    //     None => {}
-                    //     Some(token) => {
-                    //         chars.clear();
-                    //         print_token(c, token);
-                    //     }
-                    // }
                     match tokens.get(chars.as_slice()) {
                         None => {
                             let prev = &chars.as_slice()[..chars.len() - 1];
                             match tokens.get(prev) {
                                 None => {}
                                 Some(token) => {
-                                    print_token(prev, token);
-                                    chars.clear();
-                                    chars.push(c);
+                                    if token == &Token::COMMENT {
+                                        skip_until_next_line = true;
+                                        chars.clear();
+                                    } else {
+                                        print_token(prev, token);
+                                        chars.clear();
+                                        chars.push(c);
+                                    }
                                 }
                             };
                         }
@@ -102,7 +123,9 @@ fn main() {
             match tokens.get(chars.as_slice()) {
                 None => {}
                 Some(token) => {
-                    print_token(chars.as_slice(), token);
+                    if token != &Token::COMMENT {
+                        print_token(chars.as_slice(), token);
+                    }
                     chars.clear();
                 }
             }
@@ -143,6 +166,8 @@ fn get_tokens_map() -> HashMap<Box<[char]>, Token> {
     tokens.insert(str_to_slice("<="), Token::LESS_EQUAL);
     tokens.insert(str_to_slice(">"), Token::GREATER);
     tokens.insert(str_to_slice(">="), Token::GREATER_EQUAL);
+    tokens.insert(str_to_slice("/"), Token::SLASH);
+    tokens.insert(str_to_slice("//"), Token::COMMENT);
     tokens
 }
 
@@ -162,6 +187,7 @@ fn get_allowed_chars_set() -> HashSet<char> {
     chars.insert('!');
     chars.insert('<');
     chars.insert('>');
+    chars.insert('/');
     chars
 }
 

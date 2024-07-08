@@ -30,6 +30,22 @@ enum Token {
     STRING,
     NUMBER,
     IDENTIFIER,
+    AND,
+    CLASS,
+    ELSE,
+    FALSE,
+    FOR,
+    FUN,
+    IF,
+    NIL,
+    OR,
+    PRINT,
+    RETURN,
+    SUPER,
+    THIS,
+    TRUE,
+    VAR,
+    WHILE,
     EOF,
 }
 
@@ -128,7 +144,7 @@ fn main() {
                             continue;
                         }
                         if c.is_ascii_alphabetic() || c == '_' {
-                            read_identifier(&mut iterator, &mut chars);
+                            read_identifier(&mut iterator, &mut chars, &tokens);
                             continue;
                         }
 
@@ -178,11 +194,15 @@ fn main() {
     }
 }
 
-fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>) {
+fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>, tokens: &HashMap<Box<[char]>, Token>) {
     loop {
         match iterator.peek() {
             None => {
-                print_token(chars.as_slice(), &Token::IDENTIFIER);
+                if let Some(token) = tokens.get(chars.as_slice()) {
+                    print_token(chars.as_slice(), token);
+                } else {
+                    print_token(chars.as_slice(), &Token::IDENTIFIER);
+                }
                 chars.clear();
                 break;
             }
@@ -191,7 +211,11 @@ fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>) {
                     chars.push(c);
                     iterator.advance();
                 } else {
-                    print_token(chars.as_slice(), &Token::IDENTIFIER);
+                    if let Some(token) = tokens.get(chars.as_slice()) {
+                        print_token(chars.as_slice(), token);
+                    } else {
+                        print_token(chars.as_slice(), &Token::IDENTIFIER);
+                    }
                     chars.clear();
                     break;
                 }
@@ -333,6 +357,22 @@ fn get_tokens_map() -> HashMap<Box<[char]>, Token> {
     tokens.insert(str_to_slice(">="), Token::GREATER_EQUAL);
     tokens.insert(str_to_slice("/"), Token::SLASH);
     tokens.insert(str_to_slice("//"), Token::COMMENT);
+    tokens.insert(str_to_slice("and"), Token::AND);
+    tokens.insert(str_to_slice("class"), Token::CLASS);
+    tokens.insert(str_to_slice("else"), Token::ELSE);
+    tokens.insert(str_to_slice("false"), Token::FALSE);
+    tokens.insert(str_to_slice("for"), Token::FOR);
+    tokens.insert(str_to_slice("fun"), Token::FUN);
+    tokens.insert(str_to_slice("if"), Token::IF);
+    tokens.insert(str_to_slice("nil"), Token::NIL);
+    tokens.insert(str_to_slice("or"), Token::OR);
+    tokens.insert(str_to_slice("print"), Token::PRINT);
+    tokens.insert(str_to_slice("return"), Token::RETURN);
+    tokens.insert(str_to_slice("super"), Token::SUPER);
+    tokens.insert(str_to_slice("this"), Token::THIS);
+    tokens.insert(str_to_slice("true"), Token::TRUE);
+    tokens.insert(str_to_slice("var"), Token::VAR);
+    tokens.insert(str_to_slice("while"), Token::WHILE);
     tokens
 }
 

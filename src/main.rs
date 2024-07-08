@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
+use std::str::Chars;
 
 #[derive(Debug, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
@@ -27,7 +28,45 @@ enum Token {
     SLASH,
     COMMENT,
     STRING,
+    NUMBER,
     EOF,
+}
+
+struct CharIterator {
+    position: usize,
+    limit: usize,
+    chars: Vec<char>,
+    pub line: usize,
+    pub line_position: usize,
+}
+
+impl CharIterator {
+    fn from(chars: Chars) -> CharIterator {
+        let chars: Vec<char> = chars.collect();
+        CharIterator {
+            position: 0,
+            limit: chars.len(),
+            chars,
+            line: 1,
+            line_position: 1,
+        }
+    }
+    fn peek(&self) -> Option<char> {
+        if self.position >= self.limit {
+            None
+        } else {
+            Some(self.chars[self.position])
+        }
+    }
+    fn advance(&mut self) {
+        self.position += 1;
+        if let Some(c) = self.peek() {
+            if c == '\n' {
+                self.line += 1;
+                self.line_position = 1;
+            }
+        }
+    }
 }
 
 fn main() {
@@ -52,116 +91,60 @@ fn main() {
             });
 
             let mut chars = vec![];
-            let mut line_number = 1;
-            let mut _position = 0;
-            let mut skip_until_next_line = false;
-            let mut in_string = false;
-            let mut quote_char = '"';
 
             if !file_contents.is_empty() {
-                for c in file_contents.chars() {
-                    _position += 1;
+                let mut iterator = CharIterator::from(file_contents.chars());
+                if let Some(c) = iterator.peek() {
                     if c == '\n' {
-                        line_number += 1;
-                        _position = 0;
-                        skip_until_next_line = false;
-
-                        if !in_string {
-                            match tokens.get(chars.as_slice()) {
-                                None => {}
-                                Some(token) => {
-                                    if token != &Token::COMMENT {
-                                        print_token(chars.as_slice(), token);
-                                    }
-                                    chars.clear();
-                                }
-                            }
-                            continue;
-                        }
+                        iterator.line += 1;
+                        iterator.line_position = 1;
                     }
-                    if skip_until_next_line {
+                }
+
+                while let Some(c) = iterator.peek() {
+                    if c == '\n' || c == ' ' || c == '\t' {
+                        iterator.advance();
                         continue;
                     }
-
-                    if in_string {
-                        chars.push(c);
-                        if c == quote_char && (chars.len() == 0 || chars[chars.len() - 1] != '\\') {
-                            print_token(chars.as_slice(), &Token::STRING);
-                            chars.clear();
-                            in_string = false;
+                    if c.is_ascii_digit() {
+                        if flush_token(&tokens, &mut chars, &mut iterator) {
+                            continue;
                         }
+
+                        read_number(&mut iterator, &mut chars);
+                        continue;
+                    } else if c == '"' {
+                        if flush_token(&tokens, &mut chars, &mut iterator) {
+                            continue;
+                        }
+
+                        if let Err(_) = read_string(c, &mut iterator, &mut chars) {
+                            has_lexical_errors = true;
+                        }
+                        continue;
+                    } else if !allowed_chars.contains(&c) {
+                        if flush_token(&tokens, &mut chars, &mut iterator) {
+                            continue;
+                        }
+
+                        let line_number = iterator.line;
+                        writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
+                        has_lexical_errors = true;
                     } else {
-                        if c == '"' {
-                            if chars.len() > 0 {
-                                match tokens.get(chars.as_slice()) {
-                                    None => {}
-                                    Some(token) => {
-                                        if token == &Token::COMMENT {
-                                            skip_until_next_line = true;
-                                            continue;
-                                        } else {
-                                            print_token(chars.as_slice(), token);
-                                        }
-                                        chars.clear();
-                                    }
-                                }
-                            }
-
-                            if !skip_until_next_line {
-                                in_string = true;
-                                chars.push(c);
-                                quote_char = '"';
-                            }
-                            continue;
-                        }
-
-                        if !allowed_chars.contains(&c) {
-                            match tokens.get(chars.as_slice()) {
-                                None => {}
-                                Some(token) => {
-                                    if token == &Token::COMMENT {
-                                        skip_until_next_line = true;
-                                        continue;
-                                    } else {
-                                        print_token(chars.as_slice(), token);
-                                    }
-                                    chars.clear();
-                                }
-                            }
-                            if c != ' ' && c != '\t' {
-                                writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
-                                has_lexical_errors = true;
-                            }
-                            continue;
-                        }
-
                         chars.push(c);
                         match tokens.get(chars.as_slice()) {
                             None => {
-                                let prev = &chars.as_slice()[..chars.len() - 1];
-                                match tokens.get(prev) {
-                                    None => {}
-                                    Some(token) => {
-                                        if token == &Token::COMMENT {
-                                            skip_until_next_line = true;
-                                            chars.clear();
-                                        } else {
-                                            print_token(prev, token);
-                                            chars.clear();
-                                            chars.push(c);
-                                        }
-                                    }
-                                };
+                                chars.pop();
+                                if flush_token(&tokens, &mut chars, &mut iterator) {
+                                    continue;
+                                }
+                                chars.push(c);
                             }
                             Some(_) => {}
                         }
                     }
+                    iterator.advance();
                 }
-            }
-
-            if in_string {
-                writeln!(io::stderr(), "[line {line_number}] Error: Unterminated string.").unwrap();
-                has_lexical_errors = true;
             }
 
             match tokens.get(chars.as_slice()) {
@@ -174,7 +157,7 @@ fn main() {
                 }
             }
 
-            if !chars.is_empty() && !in_string {
+            if !chars.is_empty() {
                 panic!("cannot find token for {:?}", chars)
             }
             println!("{:?}  null", Token::EOF)
@@ -187,6 +170,117 @@ fn main() {
 
     if has_lexical_errors {
         std::process::exit(65);
+    }
+}
+
+fn flush_token(tokens: &HashMap<Box<[char]>, Token>, mut chars: &mut Vec<char>, mut iterator: &mut CharIterator) -> bool {
+    if chars.len() > 0 {
+        match tokens.get(chars.as_slice()) {
+            None => {}
+            Some(token) => {
+                if token == &Token::COMMENT {
+                    skip_until_next_line(&mut iterator, &mut chars);
+                    return true;
+                } else {
+                    print_token(chars.as_slice(), token);
+                }
+                chars.clear();
+            }
+        }
+    }
+    false
+}
+
+fn skip_until_next_line(iterator: &mut CharIterator, chars: &mut Vec<char>) {
+    loop {
+        match iterator.peek() {
+            None => {
+                break
+            }
+            Some(c) => {
+                iterator.advance();
+                if c == '\n' {
+                    break;
+                } else {
+                    chars.push(c);
+                }
+            }
+        }
+    }
+    let comment = String::from_iter(chars.iter());
+    chars.clear();
+    writeln!(io::stderr(), "comment: {comment}").unwrap();
+}
+
+fn read_string(c: char, iterator: &mut CharIterator, chars: &mut Vec<char>) -> Result<(), ()> {
+    chars.push(c);
+    iterator.advance();
+    let quote_char = c;
+
+    loop {
+        match iterator.peek() {
+            None => {
+                let line_number = iterator.line;
+                writeln!(io::stderr(), "[line {line_number}] Error: Unterminated string.").unwrap();
+                chars.clear();
+                return Err(());
+            }
+            Some(c) => {
+                chars.push(c);
+                iterator.advance();
+                if c == quote_char && (chars.len() == 0 || chars[chars.len() - 1] != '\\') {
+                    print_token(chars.as_slice(), &Token::STRING);
+                    chars.clear();
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
+fn read_number(iterator: &mut CharIterator, chars: &mut Vec<char>) {
+    let mut no_dots = true;
+    loop {
+        match iterator.peek() {
+            None => {
+                if chars[chars.len() - 1] == '.' {
+                    print_token(&chars.as_slice()[..chars.len() - 1], &Token::NUMBER);
+
+                    chars.clear();
+                    chars.push('.');
+                    print_token(chars.as_slice(), &Token::DOT);
+                } else {
+                    print_token(chars.as_slice(), &Token::NUMBER);
+                }
+                chars.clear();
+                iterator.advance();
+                break;
+            }
+            Some(c) => {
+                if c.is_ascii_digit() {
+                    chars.push(c)
+                } else if c == '.' {
+                    if no_dots {
+                        chars.push(c);
+                        no_dots = false;
+                    } else {
+                        // panic!("cannot parse number")
+                        print_token(chars.as_slice(), &Token::NUMBER);
+                        chars.clear();
+
+                        // chars.push('.');
+                        // print_token(chars.as_slice(), &Token::DOT);
+                        // chars.clear();
+                        break;
+                    }
+                } else {
+                    print_token(chars.as_slice(), &Token::NUMBER);
+                    chars.clear();
+                    break;
+                }
+                iterator.advance();
+            }
+        }
     }
 }
 
@@ -245,6 +339,21 @@ fn print_token(chars: &[char], token: &Token) {
         print!(" ");
         for c in &chars[1..chars.len() - 1] {
             print!("{c}");
+        }
+        println!("");
+    } else if token == &Token::NUMBER {
+        print!(" ");
+        let mut is_decimal = false;
+        for c in chars {
+            print!("{c}");
+            if *c == '.' {
+                is_decimal = true;
+            }
+        }
+        if !is_decimal {
+            print!(".0");
+        } else if chars[chars.len() - 1] == '.' {
+            print!("0");
         }
         println!("");
     } else {

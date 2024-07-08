@@ -26,6 +26,7 @@ enum Token {
     GREATER_EQUAL,
     SLASH,
     COMMENT,
+    STRING,
     EOF,
 }
 
@@ -54,6 +55,8 @@ fn main() {
             let mut line_number = 1;
             let mut _position = 0;
             let mut skip_until_next_line = false;
+            let mut in_string = false;
+            let mut quote_char = '"';
 
             if !file_contents.is_empty() {
                 for c in file_contents.chars() {
@@ -61,65 +64,104 @@ fn main() {
                     if c == '\n' {
                         line_number += 1;
                         _position = 0;
-                        skip_until_next_line=false;
+                        skip_until_next_line = false;
 
-                        match tokens.get(chars.as_slice()) {
-                            None => {}
-                            Some(token) => {
-                                if token != &Token::COMMENT {
-                                    print_token(chars.as_slice(), token);
+                        if !in_string {
+                            match tokens.get(chars.as_slice()) {
+                                None => {}
+                                Some(token) => {
+                                    if token != &Token::COMMENT {
+                                        print_token(chars.as_slice(), token);
+                                    }
+                                    chars.clear();
                                 }
-                                chars.clear();
                             }
+                            continue;
                         }
-                        continue
                     }
                     if skip_until_next_line {
-                        continue
-                    }
-
-                    if !allowed_chars.contains(&c) {
-                        match tokens.get(chars.as_slice()) {
-                            None => {}
-                            Some(token) => {
-                                if token == &Token::COMMENT {
-                                    skip_until_next_line = true;
-                                    continue;
-                                } else {
-                                    print_token(chars.as_slice(), token);
-                                }
-                                chars.clear();
-                            }
-                        }
-                        if c != ' ' && c != '\t' {
-                            writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
-                            has_lexical_errors = true;
-                        }
                         continue;
                     }
 
+                    if in_string {
+                        chars.push(c);
+                        if c == quote_char && (chars.len() == 0 || chars[chars.len() - 1] != '\\') {
+                            print_token(chars.as_slice(), &Token::STRING);
+                            chars.clear();
+                            in_string = false;
+                        }
+                    } else {
+                        if c == '"' {
+                            if chars.len() > 0 {
+                                match tokens.get(chars.as_slice()) {
+                                    None => {}
+                                    Some(token) => {
+                                        if token == &Token::COMMENT {
+                                            skip_until_next_line = true;
+                                            continue;
+                                        } else {
+                                            print_token(chars.as_slice(), token);
+                                        }
+                                        chars.clear();
+                                    }
+                                }
+                            }
 
-                    chars.push(c);
-                    match tokens.get(chars.as_slice()) {
-                        None => {
-                            let prev = &chars.as_slice()[..chars.len() - 1];
-                            match tokens.get(prev) {
+                            if !skip_until_next_line {
+                                in_string = true;
+                                chars.push(c);
+                                quote_char = '"';
+                            }
+                            continue;
+                        }
+
+                        if !allowed_chars.contains(&c) {
+                            match tokens.get(chars.as_slice()) {
                                 None => {}
                                 Some(token) => {
                                     if token == &Token::COMMENT {
                                         skip_until_next_line = true;
-                                        chars.clear();
+                                        continue;
                                     } else {
-                                        print_token(prev, token);
-                                        chars.clear();
-                                        chars.push(c);
+                                        print_token(chars.as_slice(), token);
                                     }
+                                    chars.clear();
                                 }
-                            };
+                            }
+                            if c != ' ' && c != '\t' {
+                                writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
+                                has_lexical_errors = true;
+                            }
+                            continue;
                         }
-                        Some(_) => {}
+
+                        chars.push(c);
+                        match tokens.get(chars.as_slice()) {
+                            None => {
+                                let prev = &chars.as_slice()[..chars.len() - 1];
+                                match tokens.get(prev) {
+                                    None => {}
+                                    Some(token) => {
+                                        if token == &Token::COMMENT {
+                                            skip_until_next_line = true;
+                                            chars.clear();
+                                        } else {
+                                            print_token(prev, token);
+                                            chars.clear();
+                                            chars.push(c);
+                                        }
+                                    }
+                                };
+                            }
+                            Some(_) => {}
+                        }
                     }
                 }
+            }
+
+            if in_string {
+                writeln!(io::stderr(), "[line {line_number}] Error: Unterminated string.").unwrap();
+                has_lexical_errors = true;
             }
 
             match tokens.get(chars.as_slice()) {
@@ -132,7 +174,7 @@ fn main() {
                 }
             }
 
-            if !chars.is_empty() {
+            if !chars.is_empty() && !in_string {
                 panic!("cannot find token for {:?}", chars)
             }
             println!("{:?}  null", Token::EOF)
@@ -199,7 +241,15 @@ fn print_token(chars: &[char], token: &Token) {
     for c in chars {
         print!("{c}");
     }
-    println!(" null");
+    if token == &Token::STRING {
+        print!(" ");
+        for c in &chars[1..chars.len() - 1] {
+            print!("{c}");
+        }
+        println!("");
+    } else {
+        println!(" null");
+    }
 }
 
 fn str_to_slice(s: &str) -> Box<[char]> {

@@ -29,6 +29,7 @@ enum Token {
     COMMENT,
     STRING,
     NUMBER,
+    IDENTIFIER,
     EOF,
 }
 
@@ -126,6 +127,10 @@ fn main() {
                         if flush_token(&tokens, &mut chars, &mut iterator) {
                             continue;
                         }
+                        if c.is_ascii_alphabetic() || c == '_' {
+                            read_identifier(&mut iterator, &mut chars);
+                            continue;
+                        }
 
                         let line_number = iterator.line;
                         writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
@@ -170,6 +175,28 @@ fn main() {
 
     if has_lexical_errors {
         std::process::exit(65);
+    }
+}
+
+fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>) {
+    loop {
+        match iterator.peek() {
+            None => {
+                print_token(chars.as_slice(), &Token::IDENTIFIER);
+                chars.clear();
+                break;
+            }
+            Some(c) => {
+                if c == '_' || c.is_ascii_alphanumeric() {
+                    chars.push(c);
+                    iterator.advance();
+                } else {
+                    print_token(chars.as_slice(), &Token::IDENTIFIER);
+                    chars.clear();
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -343,19 +370,18 @@ fn print_token(chars: &[char], token: &Token) {
         println!("");
     } else if token == &Token::NUMBER {
         print!(" ");
-        let mut is_decimal = false;
-        for c in chars {
-            print!("{c}");
-            if *c == '.' {
-                is_decimal = true;
-            }
+        let s = String::from_iter(chars.iter());
+        writeln!(io::stderr(), "parsing number: {s}").unwrap();
+        let value: f64 = s.parse().expect("failed to parse number");
+        // writeln!(io::stderr(), "parsing number value: {value}").unwrap();
+
+        let number_str = value.to_string();
+        print!("{number_str}");
+        if number_str.contains('.') {
+            println!("")
+        } else {
+            println!(".0")
         }
-        if !is_decimal {
-            print!(".0");
-        } else if chars[chars.len() - 1] == '.' {
-            print!("0");
-        }
-        println!("");
     } else {
         println!(" null");
     }

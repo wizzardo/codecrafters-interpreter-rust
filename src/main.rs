@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fmt::{Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
 use std::str::Chars;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[allow(non_camel_case_types)]
 enum Token {
     LEFT_PAREN,
@@ -86,6 +87,23 @@ impl CharIterator {
     }
 }
 
+#[allow(unused)]
+struct Lexeme {
+    token: Token,
+    src: Vec<char>,
+    value: Vec<char>,
+    line: usize,
+    line_position: usize,
+}
+
+impl Display for Lexeme {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let src_str: String = self.src.iter().collect();
+        let value_str: String = self.value.iter().collect();
+        write!(f, "{:?} {} {}", self.token, src_str, value_str)
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -98,110 +116,129 @@ fn main() {
 
     let tokens = get_tokens_map();
     let allowed_chars = get_allowed_chars_set();
-    let mut has_lexical_errors = false;
 
     match command.as_str() {
         "tokenize" => {
-            let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
-                writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
-                String::new()
-            });
+            let (lexemes, result) = tokenize(filename, &tokens, allowed_chars);
 
-            let mut chars = vec![];
-
-            if !file_contents.is_empty() {
-                let mut iterator = CharIterator::from(file_contents.chars());
-                if let Some(c) = iterator.peek() {
-                    if c == '\n' {
-                        iterator.line += 1;
-                        iterator.line_position = 1;
-                    }
-                }
-
-                while let Some(c) = iterator.peek() {
-                    if c == '\n' || c == ' ' || c == '\t' {
-                        iterator.advance();
-                        continue;
-                    }
-                    if c.is_ascii_digit() {
-                        if flush_token(&tokens, &mut chars, &mut iterator) {
-                            continue;
-                        }
-
-                        read_number(&mut iterator, &mut chars);
-                        continue;
-                    } else if c == '"' {
-                        if flush_token(&tokens, &mut chars, &mut iterator) {
-                            continue;
-                        }
-
-                        if let Err(_) = read_string(c, &mut iterator, &mut chars) {
-                            has_lexical_errors = true;
-                        }
-                        continue;
-                    } else if !allowed_chars.contains(&c) {
-                        if flush_token(&tokens, &mut chars, &mut iterator) {
-                            continue;
-                        }
-                        if c.is_ascii_alphabetic() || c == '_' {
-                            read_identifier(&mut iterator, &mut chars, &tokens);
-                            continue;
-                        }
-
-                        let line_number = iterator.line;
-                        writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
-                        has_lexical_errors = true;
-                    } else {
-                        chars.push(c);
-                        match tokens.get(chars.as_slice()) {
-                            None => {
-                                chars.pop();
-                                if flush_token(&tokens, &mut chars, &mut iterator) {
-                                    continue;
-                                }
-                                chars.push(c);
-                            }
-                            Some(_) => {}
-                        }
-                    }
-                    iterator.advance();
-                }
+            for l in lexemes {
+                println!("{}", l)
             }
 
-            match tokens.get(chars.as_slice()) {
-                None => {}
-                Some(token) => {
-                    if token != &Token::COMMENT {
-                        print_token(chars.as_slice(), token);
-                    }
-                    chars.clear();
-                }
+            if result.is_err() {
+                std::process::exit(65);
             }
-
-            if !chars.is_empty() {
-                panic!("cannot find token for {:?}", chars)
-            }
-            println!("{:?}  null", Token::EOF)
         }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
             return;
         }
     }
-
-    if has_lexical_errors {
-        std::process::exit(65);
-    }
 }
 
-fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>, tokens: &HashMap<Box<[char]>, Token>) {
+fn tokenize(filename: &String, tokens: &HashMap<Box<[char]>, Token>, allowed_chars: HashSet<char>)-> (Vec<Lexeme>, Result<(), ()>) {
+    let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
+        writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
+        String::new()
+    });
+
+    let mut chars = vec![];
+    let mut has_lexical_errors = false;
+    let mut lexemes: Vec<Lexeme> = vec![];
+
+    let mut iterator = CharIterator::from(file_contents.chars());
+    if !file_contents.is_empty() {
+        if let Some(c) = iterator.peek() {
+            if c == '\n' {
+                iterator.line += 1;
+                iterator.line_position = 1;
+            }
+        }
+
+        while let Some(c) = iterator.peek() {
+            if c == '\n' || c == ' ' || c == '\t' {
+                iterator.advance();
+                continue;
+            }
+            if c.is_ascii_digit() {
+                if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                    continue;
+                }
+
+                read_number(&mut iterator, &mut chars, &mut lexemes);
+                continue;
+            } else if c == '"' {
+                if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                    continue;
+                }
+
+                if let Err(_) = read_string(c, &mut iterator, &mut chars, &mut lexemes) {
+                    has_lexical_errors = true;
+                }
+                continue;
+            } else if !allowed_chars.contains(&c) {
+                if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                    continue;
+                }
+                if c.is_ascii_alphabetic() || c == '_' {
+                    read_identifier(&mut iterator, &mut chars, &tokens, &mut lexemes);
+                    continue;
+                }
+
+                let line_number = iterator.line;
+                writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
+                has_lexical_errors = true;
+            } else {
+                chars.push(c);
+                match tokens.get(chars.as_slice()) {
+                    None => {
+                        chars.pop();
+                        if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                            continue;
+                        }
+                        chars.push(c);
+                    }
+                    Some(_) => {}
+                }
+            }
+            iterator.advance();
+        }
+    }
+
+    match tokens.get(chars.as_slice()) {
+        None => {}
+        Some(token) => {
+            if token != &Token::COMMENT {
+                print_token(chars.as_slice(), token, &mut lexemes, &iterator);
+            }
+            chars.clear();
+        }
+    }
+
+    if !chars.is_empty() {
+        panic!("cannot find token for {:?}", chars)
+    }
+    lexemes.push(Lexeme {
+        token: Token::EOF,
+        src: Vec::with_capacity(0),
+        value: "null".chars().collect(),
+        line: iterator.line,
+        line_position: iterator.line_position,
+    });
+    return (lexemes, match has_lexical_errors {
+        true => { Err(()) }
+        false => { Ok(()) }
+    })
+}
+
+fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>, tokens: &HashMap<Box<[char]>, Token>, lexemes: &mut Vec<Lexeme>) {
     loop {
         match iterator.peek() {
             None => {
                 if let Some(token) = tokens.get(chars.as_slice()) {
-                    print_token(chars.as_slice(), token);
+                    print_token(chars.as_slice(), token, lexemes, &iterator);
                 } else {
-                    print_token(chars.as_slice(), &Token::IDENTIFIER);
+                    print_token(chars.as_slice(), &Token::IDENTIFIER, lexemes, &iterator);
                 }
                 chars.clear();
                 break;
@@ -212,9 +249,9 @@ fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>, tokens: &
                     iterator.advance();
                 } else {
                     if let Some(token) = tokens.get(chars.as_slice()) {
-                        print_token(chars.as_slice(), token);
+                        print_token(chars.as_slice(), token, lexemes, &iterator);
                     } else {
-                        print_token(chars.as_slice(), &Token::IDENTIFIER);
+                        print_token(chars.as_slice(), &Token::IDENTIFIER, lexemes, &iterator);
                     }
                     chars.clear();
                     break;
@@ -224,7 +261,7 @@ fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>, tokens: &
     }
 }
 
-fn flush_token(tokens: &HashMap<Box<[char]>, Token>, mut chars: &mut Vec<char>, mut iterator: &mut CharIterator) -> bool {
+fn flush_token(tokens: &HashMap<Box<[char]>, Token>, mut chars: &mut Vec<char>, mut iterator: &mut CharIterator, lexemes: &mut Vec<Lexeme>) -> bool {
     if chars.len() > 0 {
         match tokens.get(chars.as_slice()) {
             None => {}
@@ -233,7 +270,7 @@ fn flush_token(tokens: &HashMap<Box<[char]>, Token>, mut chars: &mut Vec<char>, 
                     skip_until_next_line(&mut iterator, &mut chars);
                     return true;
                 } else {
-                    print_token(chars.as_slice(), token);
+                    print_token(chars.as_slice(), token, lexemes, &iterator);
                 }
                 chars.clear();
             }
@@ -263,7 +300,7 @@ fn skip_until_next_line(iterator: &mut CharIterator, chars: &mut Vec<char>) {
     writeln!(io::stderr(), "comment: {comment}").unwrap();
 }
 
-fn read_string(c: char, iterator: &mut CharIterator, chars: &mut Vec<char>) -> Result<(), ()> {
+fn read_string(c: char, iterator: &mut CharIterator, chars: &mut Vec<char>, lexemes: &mut Vec<Lexeme>) -> Result<(), ()> {
     chars.push(c);
     iterator.advance();
     let quote_char = c;
@@ -280,7 +317,7 @@ fn read_string(c: char, iterator: &mut CharIterator, chars: &mut Vec<char>) -> R
                 chars.push(c);
                 iterator.advance();
                 if c == quote_char && (chars.len() == 0 || chars[chars.len() - 1] != '\\') {
-                    print_token(chars.as_slice(), &Token::STRING);
+                    print_token(chars.as_slice(), &Token::STRING, lexemes, &iterator);
                     chars.clear();
                     return Ok(());
                 }
@@ -289,19 +326,19 @@ fn read_string(c: char, iterator: &mut CharIterator, chars: &mut Vec<char>) -> R
     }
 }
 
-fn read_number(iterator: &mut CharIterator, chars: &mut Vec<char>) {
+fn read_number(iterator: &mut CharIterator, chars: &mut Vec<char>, lexemes: &mut Vec<Lexeme>) {
     let mut no_dots = true;
     loop {
         match iterator.peek() {
             None => {
                 if chars[chars.len() - 1] == '.' {
-                    print_token(&chars.as_slice()[..chars.len() - 1], &Token::NUMBER);
+                    print_token(&chars.as_slice()[..chars.len() - 1], &Token::NUMBER, lexemes, &iterator);
 
                     chars.clear();
                     chars.push('.');
-                    print_token(chars.as_slice(), &Token::DOT);
+                    print_token(chars.as_slice(), &Token::DOT, lexemes, &iterator);
                 } else {
-                    print_token(chars.as_slice(), &Token::NUMBER);
+                    print_token(chars.as_slice(), &Token::NUMBER, lexemes, &iterator);
                 }
                 chars.clear();
                 iterator.advance();
@@ -316,7 +353,7 @@ fn read_number(iterator: &mut CharIterator, chars: &mut Vec<char>) {
                         no_dots = false;
                     } else {
                         // panic!("cannot parse number")
-                        print_token(chars.as_slice(), &Token::NUMBER);
+                        print_token(chars.as_slice(), &Token::NUMBER, lexemes, &iterator);
                         chars.clear();
 
                         // chars.push('.');
@@ -325,7 +362,7 @@ fn read_number(iterator: &mut CharIterator, chars: &mut Vec<char>) {
                         break;
                     }
                 } else {
-                    print_token(chars.as_slice(), &Token::NUMBER);
+                    print_token(chars.as_slice(), &Token::NUMBER, lexemes, &iterator);
                     chars.clear();
                     break;
                 }
@@ -396,34 +433,41 @@ fn get_allowed_chars_set() -> HashSet<char> {
     chars
 }
 
-fn print_token(chars: &[char], token: &Token) {
-    // println!("{:?} {x} null", token)
-    print!("{:?} ", token);
-    for c in chars {
-        print!("{c}");
-    }
+fn print_token(chars: &[char], token: &Token, lexemes: &mut Vec<Lexeme>, iterator: &CharIterator) {
     if token == &Token::STRING {
-        print!(" ");
-        for c in &chars[1..chars.len() - 1] {
-            print!("{c}");
-        }
-        println!("");
+        lexemes.push(Lexeme {
+            token: *token,
+            src: chars.to_vec(),
+            value: Vec::from(&chars[1..chars.len() - 1]),
+            line: iterator.line,
+            line_position: iterator.line_position,
+        });
     } else if token == &Token::NUMBER {
-        print!(" ");
         let s = String::from_iter(chars.iter());
-        writeln!(io::stderr(), "parsing number: {s}").unwrap();
         let value: f64 = s.parse().expect("failed to parse number");
-        // writeln!(io::stderr(), "parsing number value: {value}").unwrap();
 
         let number_str = value.to_string();
-        print!("{number_str}");
-        if number_str.contains('.') {
-            println!("")
-        } else {
-            println!(".0")
+        let mut x: Vec<char> = number_str.chars().collect();
+        if !x.contains(&'.'){
+            x.push('.');
+            x.push('0');
         }
+
+        lexemes.push(Lexeme {
+            token: *token,
+            src: chars.to_vec(),
+            value: x,
+            line: iterator.line,
+            line_position: iterator.line_position,
+        });
     } else {
-        println!(" null");
+        lexemes.push(Lexeme {
+            token: *token,
+            src: chars.to_vec(),
+            value: "null".chars().collect(),
+            line: iterator.line,
+            line_position: iterator.line_position,
+        });
     }
 }
 

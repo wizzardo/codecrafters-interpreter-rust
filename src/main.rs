@@ -3,6 +3,7 @@ use std::env;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
+use std::ops::Not;
 use std::str::Chars;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -59,6 +60,16 @@ impl Token {
             Token::FALSE => { true }
             Token::NIL => { true }
             Token::TRUE => { true }
+            _ => { false }
+        }
+    }
+
+    fn is_arithmetic(&self) -> bool {
+        match self {
+            Token::MINUS => { true }
+            Token::PLUS => { true }
+            Token::STAR => { true }
+            Token::SLASH => { true }
             _ => { false }
         }
     }
@@ -158,7 +169,7 @@ fn main() {
 
     match command.as_str() {
         "tokenize" => {
-            let (lexemes, result) = tokenize(filename);
+            let (lexemes, result) = tokenize_file(filename);
 
             for l in lexemes {
                 println!("{}", l)
@@ -170,7 +181,7 @@ fn main() {
             }
         }
         "parse" => {
-            let (lexemes, result) = tokenize(filename);
+            let (lexemes, result) = tokenize_file(filename);
             if result.is_err() {
                 std::process::exit(65);
             }
@@ -193,14 +204,30 @@ struct LiteralExpression {
     literal: Primitive,
 }
 
+#[allow(unused)]
 struct GroupExpression {
+    start: Lexeme,
+    end: Lexeme,
     expression: Box<dyn Expression>,
 }
+
+#[allow(unused)]
 struct UnaryNotExpression {
+    lexeme: Lexeme,
     expression: Box<dyn Expression>,
 }
+
+#[allow(unused)]
 struct UnaryMinusExpression {
+    lexeme: Lexeme,
     expression: Box<dyn Expression>,
+}
+
+#[allow(unused)]
+struct BinaryExpression {
+    lexeme: Lexeme,
+    left: Box<dyn Expression>,
+    right: Box<dyn Expression>,
 }
 
 impl Expression for LiteralExpression {
@@ -235,6 +262,19 @@ impl Expression for UnaryMinusExpression {
     }
 }
 
+impl Expression for BinaryExpression {
+    fn to_string(&self) -> String {
+        let action = match self.lexeme.token {
+            Token::STAR => { '*' }
+            Token::MINUS => { '-' }
+            Token::PLUS => { '+' }
+            Token::SLASH => { '/' }
+            t => { panic!("{:?} is not an action for binary expression", t) }
+        };
+        format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
+    }
+}
+
 enum Primitive {
     Number(f64),
     String(String),
@@ -248,25 +288,97 @@ fn parse_lexemes(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
 }
 
 fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let mut operands = vec![];
+    let mut operations = vec![];
     while let Some(lexeme) = iterator.peek() {
-        if let true = lexeme.token.is_literal() {
+        let expression = if let true = lexeme.token.is_literal() {
             let expression = to_literal_expression(lexeme);
             iterator.advance();
-            return expression
+            expression
         } else if lexeme.token == Token::LEFT_PAREN {
-            return parse_group(iterator)
+            parse_group(iterator)
         } else if lexeme.token == Token::BANG {
-            return parse_unary_not(iterator)
+            parse_unary_not(iterator)
         } else if lexeme.token == Token::MINUS {
-            return parse_unary_minus(iterator)
+            parse_unary_minus(iterator)
         } else {
             panic!("not implemented yet: {:?}", lexeme.token)
+        };
+
+        operands.push(expression);
+        match iterator.peek() {
+            None => {
+                // return expression
+                break
+            }
+            Some(lexeme) => {
+                if lexeme.token.is_arithmetic() {
+                    let lexeme = lexeme.clone();
+                    operations.push(lexeme);
+                    iterator.advance();
+                    // let right = parse(iterator);
+                    // break
+                    // return Box::new(BinaryExpression { lexeme, left, right });
+                } else {
+                    // return expression;
+                    break
+                }
+            }
         }
+    }
+    if operands.len() == 1 {
+        return operands.into_iter().next().unwrap()
+    } else if operands.len() == 0 {
+        panic!("no expression found")
+    } else {
+        operands.reverse();
+        operations.reverse();
+
+        // for x in &operands {
+        //     println!("{}", x.to_string());
+        // }
+        // for x in &operations {
+        //     println!("{:?}", x.token);
+        // }
+
+        let lexeme = operations.remove(operations.len() - 1);
+        let left = operands.remove(operands.len() - 1);
+        let right = operands.remove(operands.len() - 1);
+        let mut exp = BinaryExpression { lexeme, left, right };
+
+        while operands.is_empty().not() {
+            let right = operands.remove(operands.len() - 1);
+            let lexeme = operations.remove(operations.len() - 1);
+            exp = BinaryExpression { lexeme, left: Box::new(exp), right };
+        }
+
+        Box::new(exp)
+    }
+}
+
+fn parse_one(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    while let Some(lexeme) = iterator.peek() {
+        let expression = if let true = lexeme.token.is_literal() {
+            let expression = to_literal_expression(lexeme);
+            iterator.advance();
+            expression
+        } else if lexeme.token == Token::LEFT_PAREN {
+            parse_group(iterator)
+        } else if lexeme.token == Token::BANG {
+            parse_unary_not(iterator)
+        } else if lexeme.token == Token::MINUS {
+            parse_unary_minus(iterator)
+        } else {
+            panic!("not implemented yet: {:?}", lexeme.token)
+        };
+
+        return expression;
     }
     panic!("no expression found")
 }
 
 fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let start = iterator.peek().unwrap().clone();
     iterator.advance();
     if let Some(l) = iterator.peek() {
         if l.token == Token::RIGHT_PAREN {
@@ -276,6 +388,7 @@ fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     }
 
     let expression = parse(iterator);
+    let end: Lexeme;
     match iterator.peek() {
         None => {
             writeln!(io::stderr(), "unclosed group expression").unwrap();
@@ -286,19 +399,24 @@ fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
                 writeln!(io::stderr(), "{:?} != Token::RIGHT_PAREN", lexeme.token).unwrap();
                 std::process::exit(65);
             }
+
+            end = lexeme.clone();
         }
-    }
+    };
     iterator.advance();
-    Box::new(GroupExpression { expression })
+    Box::new(GroupExpression { start, end, expression })
 }
 
 fn parse_unary_not(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
-    Box::new(UnaryNotExpression { expression: parse(iterator) })
+    Box::new(UnaryNotExpression { lexeme, expression: parse(iterator) })
 }
+
 fn parse_unary_minus(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
-    Box::new(UnaryMinusExpression { expression: parse(iterator) })
+    Box::new(UnaryMinusExpression { lexeme, expression: parse_one(iterator) })
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {
@@ -319,76 +437,77 @@ fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {
     Box::new(LiteralExpression { lexeme: lexeme.clone(), literal })
 }
 
-fn tokenize(filename: &String) -> (Vec<Lexeme>, Result<(), ()>) {
-    let tokens = get_tokens_map();
-    let allowed_chars = get_allowed_chars_set();
-
+fn tokenize_file(filename: &String) -> (Vec<Lexeme>, Result<(), ()>) {
     let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
         writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
         String::new()
     });
+    tokenize(file_contents.chars())
+}
+
+fn tokenize(data: Chars) -> (Vec<Lexeme>, Result<(), ()>) {
+    let tokens = get_tokens_map();
+    let allowed_chars = get_allowed_chars_set();
 
     let mut chars = vec![];
     let mut has_lexical_errors = false;
     let mut lexemes: Vec<Lexeme> = vec![];
 
-    let mut iterator = CharIterator::from(file_contents.chars());
-    if !file_contents.is_empty() {
-        if let Some(c) = iterator.peek() {
-            if c == '\n' {
-                iterator.line += 1;
-                iterator.line_position = 1;
-            }
+    let mut iterator = CharIterator::from(data);
+    if let Some(c) = iterator.peek() {
+        if c == '\n' {
+            iterator.line += 1;
+            iterator.line_position = 1;
         }
+    }
 
-        while let Some(c) = iterator.peek() {
-            if c == '\n' || c == ' ' || c == '\t' {
-                iterator.advance();
-                continue;
-            }
-            if c.is_ascii_digit() {
-                if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
-                    continue;
-                }
-
-                read_number(&mut iterator, &mut chars, &mut lexemes);
-                continue;
-            } else if c == '"' {
-                if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
-                    continue;
-                }
-
-                if let Err(_) = read_string(c, &mut iterator, &mut chars, &mut lexemes) {
-                    has_lexical_errors = true;
-                }
-                continue;
-            } else if !allowed_chars.contains(&c) {
-                if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
-                    continue;
-                }
-                if c.is_ascii_alphabetic() || c == '_' {
-                    read_identifier(&mut iterator, &mut chars, &tokens, &mut lexemes);
-                    continue;
-                }
-
-                let line_number = iterator.line;
-                writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
-                has_lexical_errors = true;
-            } else {
-                chars.push(c);
-                match tokens.get(chars.as_slice()) {
-                    None => {
-                        chars.pop();
-                        if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
-                            continue;
-                        }
-                        chars.push(c);
-                    }
-                    Some(_) => {}
-                }
-            }
+    while let Some(c) = iterator.peek() {
+        if c == '\n' || c == ' ' || c == '\t' {
             iterator.advance();
+            continue;
         }
+        if c.is_ascii_digit() {
+            if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                continue;
+            }
+
+            read_number(&mut iterator, &mut chars, &mut lexemes);
+            continue;
+        } else if c == '"' {
+            if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                continue;
+            }
+
+            if let Err(_) = read_string(c, &mut iterator, &mut chars, &mut lexemes) {
+                has_lexical_errors = true;
+            }
+            continue;
+        } else if !allowed_chars.contains(&c) {
+            if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                continue;
+            }
+            if c.is_ascii_alphabetic() || c == '_' {
+                read_identifier(&mut iterator, &mut chars, &tokens, &mut lexemes);
+                continue;
+            }
+
+            let line_number = iterator.line;
+            writeln!(io::stderr(), "[line {line_number}] Error: Unexpected character: {c}").unwrap();
+            has_lexical_errors = true;
+        } else {
+            chars.push(c);
+            match tokens.get(chars.as_slice()) {
+                None => {
+                    chars.pop();
+                    if flush_token(&tokens, &mut chars, &mut iterator, &mut lexemes) {
+                        continue;
+                    }
+                    chars.push(c);
+                }
+                Some(_) => {}
+            }
+        }
+        iterator.advance();
     }
 
     match tokens.get(chars.as_slice()) {
@@ -673,5 +792,21 @@ mod tests {
         let option = tokens.get(v.as_slice());
         let token = option.expect("should contain a token");
         assert_eq!(&Token::LEFT_PAREN, token);
+    }
+
+    #[test]
+    fn test_2() {
+        let (lexemes, _) = tokenize("55 * 89 / 30".chars());
+
+        let expression = parse_lexemes(lexemes);
+        assert_eq!("(/ (* 55.0 89.0) 30.0)", expression.to_string())
+    }
+
+    #[test]
+    fn test_3() {
+        let (lexemes, _) = tokenize("3 * -4 / 5".chars());
+
+        let expression = parse_lexemes(lexemes);
+        assert_eq!("(/ (* 3.0 (- 4.0)) 5.0)", expression.to_string())
     }
 }

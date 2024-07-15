@@ -7,6 +7,7 @@ use std::str::Chars;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[allow(non_camel_case_types)]
+#[allow(unused)]
 enum Token {
     LEFT_PAREN,
     RIGHT_PAREN,
@@ -162,6 +163,7 @@ fn main() {
             for l in lexemes {
                 println!("{}", l)
             }
+            println!("EOF  null");
 
             if result.is_err() {
                 std::process::exit(65);
@@ -172,7 +174,7 @@ fn main() {
             if result.is_err() {
                 std::process::exit(65);
             }
-            let expression = parse(lexemes);
+            let expression = parse_lexemes(lexemes);
             println!("{}", expression.to_string())
         }
         _ => {
@@ -192,6 +194,12 @@ struct LiteralExpression {
 }
 
 struct GroupExpression {
+    expression: Box<dyn Expression>,
+}
+struct UnaryNotExpression {
+    expression: Box<dyn Expression>,
+}
+struct UnaryMinusExpression {
     expression: Box<dyn Expression>,
 }
 
@@ -215,6 +223,18 @@ impl Expression for GroupExpression {
     }
 }
 
+impl Expression for UnaryNotExpression {
+    fn to_string(&self) -> String {
+        format!("(! {})", self.expression.to_string())
+    }
+}
+
+impl Expression for UnaryMinusExpression {
+    fn to_string(&self) -> String {
+        format!("(- {})", self.expression.to_string())
+    }
+}
+
 enum Primitive {
     Number(f64),
     String(String),
@@ -222,15 +242,25 @@ enum Primitive {
     Nil,
 }
 
-fn parse(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
+fn parse_lexemes(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
     let mut iterator = LexemeIterator::from(lexemes);
+    return parse(&mut iterator);
+}
+
+fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     while let Some(lexeme) = iterator.peek() {
         if let true = lexeme.token.is_literal() {
-            return to_literal_expression(lexeme)
+            let expression = to_literal_expression(lexeme);
+            iterator.advance();
+            return expression
         } else if lexeme.token == Token::LEFT_PAREN {
-            return parse_group(&mut iterator)
+            return parse_group(iterator)
+        } else if lexeme.token == Token::BANG {
+            return parse_unary_not(iterator)
+        } else if lexeme.token == Token::MINUS {
+            return parse_unary_minus(iterator)
         } else {
-            panic!("not implemented yet")
+            panic!("not implemented yet: {:?}", lexeme.token)
         }
     }
     panic!("no expression found")
@@ -238,31 +268,37 @@ fn parse(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
 
 fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     iterator.advance();
-    let mut expression:Option<Box<dyn Expression>> = None;
-    while let Some(lexeme) = iterator.peek() {
-        if let true = lexeme.token.is_literal() {
-            expression = Some(to_literal_expression(lexeme));
-            iterator.advance();
-        } else if lexeme.token == Token::LEFT_PAREN {
-            expression = Some(parse_group(iterator));
-        } else if lexeme.token == Token::RIGHT_PAREN {
-            iterator.advance();
-            return match expression {
-                None => {
-                    writeln!(io::stderr(), "empty group expression").unwrap();
-                    std::process::exit(65);
-                }
-                Some(expression) => { Box::new(GroupExpression { expression }) }
-            }
-        } else if lexeme.token == Token::EOF {
-            writeln!(io::stderr(), "unclosed group expression").unwrap();
+    if let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            writeln!(io::stderr(), "empty group expression").unwrap();
             std::process::exit(65);
-        } else {
-            panic!("not implemented yet")
         }
     }
-    writeln!(io::stderr(), "unclosed group expression").unwrap();
-    std::process::exit(65);
+
+    let expression = parse(iterator);
+    match iterator.peek() {
+        None => {
+            writeln!(io::stderr(), "unclosed group expression").unwrap();
+            std::process::exit(65);
+        }
+        Some(lexeme) => {
+            if lexeme.token != Token::RIGHT_PAREN {
+                writeln!(io::stderr(), "{:?} != Token::RIGHT_PAREN", lexeme.token).unwrap();
+                std::process::exit(65);
+            }
+        }
+    }
+    iterator.advance();
+    Box::new(GroupExpression { expression })
+}
+
+fn parse_unary_not(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    iterator.advance();
+    Box::new(UnaryNotExpression { expression: parse(iterator) })
+}
+fn parse_unary_minus(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    iterator.advance();
+    Box::new(UnaryMinusExpression { expression: parse(iterator) })
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {
@@ -368,13 +404,13 @@ fn tokenize(filename: &String) -> (Vec<Lexeme>, Result<(), ()>) {
     if !chars.is_empty() {
         panic!("cannot find token for {:?}", chars)
     }
-    lexemes.push(Lexeme {
-        token: Token::EOF,
-        src: Vec::with_capacity(0),
-        value: "null".chars().collect(),
-        line: iterator.line,
-        line_position: iterator.line_position,
-    });
+    // lexemes.push(Lexeme {
+    //     token: Token::EOF,
+    //     src: Vec::with_capacity(0),
+    //     value: "null".chars().collect(),
+    //     line: iterator.line,
+    //     line_position: iterator.line_position,
+    // });
     return (lexemes, match has_lexical_errors {
         true => { Err(()) }
         false => { Ok(()) }

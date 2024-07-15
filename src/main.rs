@@ -314,7 +314,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         } else if lexeme.token == Token::MINUS {
             parse_unary_minus(iterator)
         } else {
-            panic!("not implemented yet: {:?}", lexeme.token)
+            writeln!(io::stderr(), "unexpected token {:?}", lexeme.token).unwrap();
+            std::process::exit(65);
         };
 
         operands.push(expression);

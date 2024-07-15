@@ -74,6 +74,8 @@ impl Token {
             Token::GREATER_EQUAL => { true }
             Token::LESS => { true }
             Token::LESS_EQUAL => { true }
+            Token::BANG_EQUAL => { true }
+            Token::EQUAL_EQUAL => { true }
             _ => { false }
         }
     }
@@ -277,6 +279,8 @@ impl Expression for BinaryExpression {
             Token::GREATER_EQUAL => { ">=" }
             Token::LESS => { "<" }
             Token::LESS_EQUAL => { "<=" }
+            Token::EQUAL_EQUAL => { "==" }
+            Token::BANG_EQUAL => { "!=" }
             t => { panic!("{:?} is not an action for binary expression", t) }
         };
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())

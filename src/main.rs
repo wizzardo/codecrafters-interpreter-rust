@@ -100,6 +100,32 @@ impl CharIterator {
     }
 }
 
+struct LexemeIterator {
+    position: usize,
+    limit: usize,
+    lexemes: Vec<Lexeme>,
+}
+
+impl LexemeIterator {
+    fn from(lexemes: Vec<Lexeme>) -> LexemeIterator {
+        LexemeIterator {
+            position: 0,
+            limit: lexemes.len(),
+            lexemes,
+        }
+    }
+    fn peek(&self) -> Option<&Lexeme> {
+        if self.position >= self.limit {
+            None
+        } else {
+            Some(&self.lexemes[self.position])
+        }
+    }
+    fn advance(&mut self) {
+        self.position += 1;
+    }
+}
+
 #[allow(unused)]
 #[derive(Clone)]
 struct Lexeme {
@@ -165,17 +191,27 @@ struct LiteralExpression {
     literal: Primitive,
 }
 
+struct GroupExpression {
+    expression: Box<dyn Expression>,
+}
+
 impl Expression for LiteralExpression {
     fn to_string(&self) -> String {
         // self.lexeme.value.iter().collect()
         match &self.literal {
-            Primitive::Number(it) => {
+            Primitive::Number(_it) => {
                 self.lexeme.value.iter().collect()
             }
             Primitive::String(it) => { it.clone() }
             Primitive::Boolean(it) => { it.to_string() }
             Primitive::Nil => { "nil".to_string() }
         }
+    }
+}
+
+impl Expression for GroupExpression {
+    fn to_string(&self) -> String {
+        format!("(group {})", self.expression.to_string())
     }
 }
 
@@ -186,45 +222,65 @@ enum Primitive {
     Nil,
 }
 
-// impl Display for LiteralExpression {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         let value_str: String = self.lexeme.value.iter().collect();
-//         write!(f, "{}", value_str)
-//     }
-// }
-// impl Debug for LiteralExpression {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-//         let value_str: String = self.lexeme.value.iter().collect();
-//         write!(f, "{}", value_str)
-//     }
-// }
-
 fn parse(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
-    match lexemes.first() {
-        None => { panic!("there is no lexemes to parse") }
-        Some(lexeme) => {
-            match lexeme.token.is_literal() {
-                true => {
-                    let literal = match lexeme.token {
-                        Token::TRUE => { Primitive::Boolean(true) }
-                        Token::FALSE => { Primitive::Boolean(false) }
-                        Token::STRING => {
-                            let s: String = lexeme.value.iter().collect();
-                            Primitive::String(s)
-                        }
-                        Token::NUMBER => {
-                            let s: String = lexeme.value.iter().collect();
-                            Primitive::Number(s.parse().expect("failed to parse number literal"))
-                        }
-                        Token::NIL => { Primitive::Nil }
-                        _ => { panic!("{:?} is not a literal", lexeme.token) }
-                    };
-                    Box::new(LiteralExpression { lexeme: lexeme.clone(), literal })
-                }
-                false => { panic!("not implemented yet") }
-            }
+    let mut iterator = LexemeIterator::from(lexemes);
+    while let Some(lexeme) = iterator.peek() {
+        if let true = lexeme.token.is_literal() {
+            return to_literal_expression(lexeme)
+        } else if lexeme.token == Token::LEFT_PAREN {
+            return parse_group(&mut iterator)
+        } else {
+            panic!("not implemented yet")
         }
     }
+    panic!("no expression found")
+}
+
+fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    iterator.advance();
+    let mut expression:Option<Box<dyn Expression>> = None;
+    while let Some(lexeme) = iterator.peek() {
+        if let true = lexeme.token.is_literal() {
+            expression = Some(to_literal_expression(lexeme));
+            iterator.advance();
+        } else if lexeme.token == Token::LEFT_PAREN {
+            expression = Some(parse_group(iterator));
+        } else if lexeme.token == Token::RIGHT_PAREN {
+            iterator.advance();
+            return match expression {
+                None => {
+                    writeln!(io::stderr(), "empty group expression").unwrap();
+                    std::process::exit(65);
+                }
+                Some(expression) => { Box::new(GroupExpression { expression }) }
+            }
+        } else if lexeme.token == Token::EOF {
+            writeln!(io::stderr(), "unclosed group expression").unwrap();
+            std::process::exit(65);
+        } else {
+            panic!("not implemented yet")
+        }
+    }
+    writeln!(io::stderr(), "unclosed group expression").unwrap();
+    std::process::exit(65);
+}
+
+fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {
+    let literal = match lexeme.token {
+        Token::TRUE => { Primitive::Boolean(true) }
+        Token::FALSE => { Primitive::Boolean(false) }
+        Token::STRING => {
+            let s: String = lexeme.value.iter().collect();
+            Primitive::String(s)
+        }
+        Token::NUMBER => {
+            let s: String = lexeme.value.iter().collect();
+            Primitive::Number(s.parse().expect("failed to parse number literal"))
+        }
+        Token::NIL => { Primitive::Nil }
+        _ => { panic!("{:?} is not a literal", lexeme.token) }
+    };
+    Box::new(LiteralExpression { lexeme: lexeme.clone(), literal })
 }
 
 fn tokenize(filename: &String) -> (Vec<Lexeme>, Result<(), ()>) {

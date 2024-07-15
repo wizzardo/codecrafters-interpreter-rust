@@ -64,12 +64,16 @@ impl Token {
         }
     }
 
-    fn is_arithmetic(&self) -> bool {
+    fn is_binary_operand(&self) -> bool {
         match self {
             Token::MINUS => { true }
             Token::PLUS => { true }
             Token::STAR => { true }
             Token::SLASH => { true }
+            Token::GREATER => { true }
+            Token::GREATER_EQUAL => { true }
+            Token::LESS => { true }
+            Token::LESS_EQUAL => { true }
             _ => { false }
         }
     }
@@ -265,10 +269,14 @@ impl Expression for UnaryMinusExpression {
 impl Expression for BinaryExpression {
     fn to_string(&self) -> String {
         let action = match self.lexeme.token {
-            Token::STAR => { '*' }
-            Token::MINUS => { '-' }
-            Token::PLUS => { '+' }
-            Token::SLASH => { '/' }
+            Token::STAR => { "*" }
+            Token::MINUS => { "-" }
+            Token::PLUS => { "+" }
+            Token::SLASH => { "/" }
+            Token::GREATER => { ">" }
+            Token::GREATER_EQUAL => { ">=" }
+            Token::LESS => { "<" }
+            Token::LESS_EQUAL => { "<=" }
             t => { panic!("{:?} is not an action for binary expression", t) }
         };
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
@@ -312,7 +320,7 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
                 break
             }
             Some(lexeme) => {
-                if lexeme.token.is_arithmetic() {
+                if lexeme.token.is_binary_operand() {
                     let lexeme = lexeme.clone();
                     operations.push(lexeme);
                     iterator.advance();

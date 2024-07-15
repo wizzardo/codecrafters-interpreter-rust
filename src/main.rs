@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::env;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
 use std::str::Chars;
@@ -50,6 +50,19 @@ enum Token {
     EOF,
 }
 
+impl Token {
+    fn is_literal(&self) -> bool {
+        match self {
+            Token::STRING => { true }
+            Token::NUMBER => { true }
+            Token::FALSE => { true }
+            Token::NIL => { true }
+            Token::TRUE => { true }
+            _ => { false }
+        }
+    }
+}
+
 struct CharIterator {
     position: usize,
     limit: usize,
@@ -88,6 +101,7 @@ impl CharIterator {
 }
 
 #[allow(unused)]
+#[derive(Clone)]
 struct Lexeme {
     token: Token,
     src: Vec<char>,
@@ -114,12 +128,10 @@ fn main() {
     let command = &args[1];
     let filename = &args[2];
 
-    let tokens = get_tokens_map();
-    let allowed_chars = get_allowed_chars_set();
 
     match command.as_str() {
         "tokenize" => {
-            let (lexemes, result) = tokenize(filename, &tokens, allowed_chars);
+            let (lexemes, result) = tokenize(filename);
 
             for l in lexemes {
                 println!("{}", l)
@@ -129,6 +141,14 @@ fn main() {
                 std::process::exit(65);
             }
         }
+        "parse" => {
+            let (lexemes, result) = tokenize(filename);
+            if result.is_err() {
+                std::process::exit(65);
+            }
+            let expression = parse(lexemes);
+            println!("{}", expression.to_string())
+        }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
             return;
@@ -136,7 +156,71 @@ fn main() {
     }
 }
 
-fn tokenize(filename: &String, tokens: &HashMap<Box<[char]>, Token>, allowed_chars: HashSet<char>)-> (Vec<Lexeme>, Result<(), ()>) {
+trait Expression {
+    fn to_string(&self) -> String;
+}
+
+struct LiteralExpression {
+    lexeme: Lexeme,
+    literal: Primitive,
+}
+
+impl Expression for LiteralExpression {
+    fn to_string(&self) -> String {
+        // self.lexeme.value.iter().collect()
+        match &self.literal {
+            Primitive::Number(it) => { it.to_string() }
+            Primitive::String(it) => { it.clone() }
+            Primitive::Boolean(it) => { it.to_string() }
+            Primitive::Nil => { "nil".to_string() }
+        }
+    }
+}
+
+enum Primitive {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+    Nil,
+}
+
+// impl Display for LiteralExpression {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+//         let value_str: String = self.lexeme.value.iter().collect();
+//         write!(f, "{}", value_str)
+//     }
+// }
+// impl Debug for LiteralExpression {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+//         let value_str: String = self.lexeme.value.iter().collect();
+//         write!(f, "{}", value_str)
+//     }
+// }
+
+fn parse(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
+    match lexemes.first() {
+        None => { panic!("there is no lexemes to parse") }
+        Some(lexeme) => {
+            match lexeme.token.is_literal() {
+                true => {
+                    let literal = match lexeme.token {
+                        Token::TRUE => { Primitive::Boolean(true) }
+                        Token::FALSE => { Primitive::Boolean(false) }
+                        Token::NIL => { Primitive::Nil }
+                        _ => { panic!("{:?} is not a literal", lexeme.token) }
+                    };
+                    Box::new(LiteralExpression { lexeme: lexeme.clone(), literal })
+                }
+                false => { panic!("not implemented yet") }
+            }
+        }
+    }
+}
+
+fn tokenize(filename: &String) -> (Vec<Lexeme>, Result<(), ()>) {
+    let tokens = get_tokens_map();
+    let allowed_chars = get_allowed_chars_set();
+
     let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
         writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
         String::new()
@@ -228,7 +312,7 @@ fn tokenize(filename: &String, tokens: &HashMap<Box<[char]>, Token>, allowed_cha
     return (lexemes, match has_lexical_errors {
         true => { Err(()) }
         false => { Ok(()) }
-    })
+    });
 }
 
 fn read_identifier(iterator: &mut CharIterator, chars: &mut Vec<char>, tokens: &HashMap<Box<[char]>, Token>, lexemes: &mut Vec<Lexeme>) {
@@ -448,7 +532,7 @@ fn print_token(chars: &[char], token: &Token, lexemes: &mut Vec<Lexeme>, iterato
 
         let number_str = value.to_string();
         let mut x: Vec<char> = number_str.chars().collect();
-        if !x.contains(&'.'){
+        if !x.contains(&'.') {
             x.push('.');
             x.push('0');
         }

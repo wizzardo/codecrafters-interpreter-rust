@@ -169,7 +169,9 @@ impl Expression for LiteralExpression {
     fn to_string(&self) -> String {
         // self.lexeme.value.iter().collect()
         match &self.literal {
-            Primitive::Number(it) => { it.to_string() }
+            Primitive::Number(it) => {
+                self.lexeme.value.iter().collect()
+            }
             Primitive::String(it) => { it.clone() }
             Primitive::Boolean(it) => { it.to_string() }
             Primitive::Nil => { "nil".to_string() }
@@ -206,6 +208,14 @@ fn parse(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
                     let literal = match lexeme.token {
                         Token::TRUE => { Primitive::Boolean(true) }
                         Token::FALSE => { Primitive::Boolean(false) }
+                        Token::STRING => {
+                            let s: String = lexeme.value.iter().collect();
+                            Primitive::String(s)
+                        }
+                        Token::NUMBER => {
+                            let s: String = lexeme.value.iter().collect();
+                            Primitive::Number(s.parse().expect("failed to parse number literal"))
+                        }
                         Token::NIL => { Primitive::Nil }
                         _ => { panic!("{:?} is not a literal", lexeme.token) }
                     };

@@ -64,7 +64,7 @@ impl Token {
         }
     }
 
-    fn is_binary_operand(&self) -> bool {
+    fn is_binary_operator(&self) -> bool {
         match self {
             Token::MINUS => { true }
             Token::PLUS => { true }
@@ -194,6 +194,24 @@ fn main() {
             let expression = parse_lexemes(lexemes);
             println!("{}", expression.to_string())
         }
+        "evaluate" => {
+            let (lexemes, result) = tokenize_file(filename);
+            if result.is_err() {
+                std::process::exit(65);
+            }
+            let expression = parse_lexemes(lexemes);
+            let result = expression.evaluate();
+            match result {
+                Ok(value) => {
+                    match value {
+                        Value::Primitive(v) => {
+                            println!("{}", v.to_string())
+                        }
+                    }
+                }
+                Err(_) => { panic!() }
+            }
+        }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
             return;
@@ -203,6 +221,11 @@ fn main() {
 
 trait Expression {
     fn to_string(&self) -> String;
+    fn evaluate(&self) -> Result<Value, ()>;
+}
+
+enum Value {
+    Primitive(Primitive),
 }
 
 struct LiteralExpression {
@@ -238,15 +261,11 @@ struct BinaryExpression {
 
 impl Expression for LiteralExpression {
     fn to_string(&self) -> String {
-        // self.lexeme.value.iter().collect()
-        match &self.literal {
-            Primitive::Number(_it) => {
-                self.lexeme.value.iter().collect()
-            }
-            Primitive::String(it) => { it.clone() }
-            Primitive::Boolean(it) => { it.to_string() }
-            Primitive::Nil => { "nil".to_string() }
-        }
+        self.literal.to_string()
+    }
+
+    fn evaluate(&self) -> Result<Value, ()> {
+        Ok(Value::Primitive(self.literal.clone()))
     }
 }
 
@@ -254,17 +273,29 @@ impl Expression for GroupExpression {
     fn to_string(&self) -> String {
         format!("(group {})", self.expression.to_string())
     }
+
+    fn evaluate(&self) -> Result<Value, ()> {
+        self.expression.evaluate()
+    }
 }
 
 impl Expression for UnaryNotExpression {
     fn to_string(&self) -> String {
         format!("(! {})", self.expression.to_string())
     }
+
+    fn evaluate(&self) -> Result<Value, ()> {
+        todo!()
+    }
 }
 
 impl Expression for UnaryMinusExpression {
     fn to_string(&self) -> String {
         format!("(- {})", self.expression.to_string())
+    }
+
+    fn evaluate(&self) -> Result<Value, ()> {
+        todo!()
     }
 }
 
@@ -285,13 +316,39 @@ impl Expression for BinaryExpression {
         };
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
     }
+
+    fn evaluate(&self) -> Result<Value, ()> {
+        todo!()
+    }
 }
 
+#[derive(Clone)]
 enum Primitive {
     Number(f64),
     String(String),
     Boolean(bool),
     Nil,
+}
+
+impl Primitive {
+    fn to_string(&self) -> String {
+        match &self {
+            Primitive::Number(value) => {
+                let number_str = value.to_string();
+                if number_str.contains('.') {
+                    number_str
+                } else {
+                    let mut x: Vec<char> = number_str.chars().collect();
+                    x.push('.');
+                    x.push('0');
+                    x.iter().collect()
+                }
+            }
+            Primitive::String(it) => { it.clone() }
+            Primitive::Boolean(it) => { it.to_string() }
+            Primitive::Nil => { "nil".to_string() }
+        }
+    }
 }
 
 fn parse_lexemes(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
@@ -325,7 +382,7 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
                 break
             }
             Some(lexeme) => {
-                if lexeme.token.is_binary_operand() {
+                if lexeme.token.is_binary_operator() {
                     let lexeme = lexeme.clone();
                     operations.push(lexeme);
                     iterator.advance();
@@ -334,13 +391,13 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
                     // return Box::new(BinaryExpression { lexeme, left, right });
                 } else {
                     // return expression;
-                    break
+                    break;
                 }
             }
         }
     }
     if operands.len() == 1 {
-        return operands.into_iter().next().unwrap()
+        return operands.into_iter().next().unwrap();
     } else if operands.len() == 0 {
         panic!("no expression found")
     } else {
@@ -821,5 +878,37 @@ mod tests {
 
         let expression = parse_lexemes(lexemes);
         assert_eq!("(/ (* 3.0 (- 4.0)) 5.0)", expression.to_string())
+    }
+
+    #[test]
+    fn test_4() {
+        let (lexemes, _) = tokenize("1 + 2 * 3".chars());
+
+        let expression = parse_lexemes(lexemes);
+        assert_eq!("(* (+ 1.0 2.0) 3.0)", expression.to_string())
+    }
+
+    #[test]
+    fn test_5() {
+        let (lexemes, _) = tokenize("76 * -30".chars());
+
+        let expression = parse_lexemes(lexemes);
+        assert_eq!("(* 76.0 (- 30.0))", expression.to_string())
+    }
+
+    #[test]
+    fn test_6() {
+        let (lexemes, _) = tokenize("-(-22 + 29) * (90 * 48) / (84 + 13)".chars());
+
+        let expression = parse_lexemes(lexemes);
+        assert_eq!("(/ (* (- (group (+ (- 22.0) 29.0))) (group (* 90.0 48.0))) (group (+ 84.0 13.0)))", expression.to_string())
+    }
+
+    #[test]
+    fn test_7() {
+        let (lexemes, _) = tokenize("(90 - 94)".chars());
+
+        let expression = parse_lexemes(lexemes);
+        assert_eq!("(group (- 90.0 94.0))", expression.to_string())
     }
 }

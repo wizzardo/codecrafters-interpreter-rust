@@ -366,6 +366,10 @@ impl Expression for BinaryExpression {
                             Token::MINUS => { Ok(Value::Primitive(Primitive::Number(l - r))) }
                             Token::PLUS => { Ok(Value::Primitive(Primitive::Number(l + r))) }
                             Token::SLASH => { Ok(Value::Primitive(Primitive::Number(l / r))) }
+                            Token::GREATER => { Ok(Value::Primitive(Primitive::Boolean(l > r))) }
+                            Token::GREATER_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l >= r))) }
+                            Token::LESS => { Ok(Value::Primitive(Primitive::Boolean(l < r))) }
+                            Token::LESS_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l <= r))) }
                             _ => { Err(()) }
                         }
                     }

@@ -370,16 +370,33 @@ impl Expression for BinaryExpression {
                             Token::GREATER_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l >= r))) }
                             Token::LESS => { Ok(Value::Primitive(Primitive::Boolean(l < r))) }
                             Token::LESS_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l <= r))) }
+                            Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l == r))) }
+                            Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l != r))) }
                             _ => { Err(()) }
                         }
                     }
                     (Primitive::String(l), Primitive::String(r)) => {
                         match self.lexeme.token {
                             Token::PLUS => { Ok(Value::Primitive(Primitive::String(format!("{l}{r}")))) }
+                            Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l == r))) }
+                            Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l != r))) }
                             _ => { Err(()) }
                         }
                     }
-                    (_, _) => { Err(()) }
+                    (Primitive::Boolean(l), Primitive::Boolean(r)) => {
+                        match self.lexeme.token {
+                            Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l == r))) }
+                            Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l != r))) }
+                            _ => { Err(()) }
+                        }
+                    }
+                    (_, _) => {
+                        match self.lexeme.token {
+                            Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(false))) }
+                            Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(true))) }
+                            _ => { Err(()) }
+                        }
+                    }
                 }
             }
         }
@@ -974,5 +991,18 @@ mod tests {
 
         let expression = parse_lexemes(lexemes);
         assert_eq!("(group (- 90.0 94.0))", expression.to_string())
+    }
+
+    #[test]
+    fn test_evaluate_1() {
+        let (lexemes, _) = tokenize("78 == \"78\"".chars());
+
+        let expression = parse_lexemes(lexemes);
+        let result = expression.evaluate().unwrap();
+        match result {
+            Value::Primitive(v) => {
+                assert_eq!("false", v.to_string())
+            }
+        }
     }
 }

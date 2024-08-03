@@ -205,7 +205,12 @@ fn main() {
                 Ok(value) => {
                     match value {
                         Value::Primitive(v) => {
-                            println!("{}", v.to_string())
+                            match v {
+                                Primitive::Number(v) => { println!("{}", v) }
+                                Primitive::String(v) => { println!("{}", v) }
+                                Primitive::Boolean(v) => { println!("{}", v) }
+                                Primitive::Nil => { println!("nil") }
+                            }
                         }
                     }
                 }

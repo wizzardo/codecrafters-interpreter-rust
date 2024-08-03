@@ -290,7 +290,27 @@ impl Expression for UnaryNotExpression {
     }
 
     fn evaluate(&self) -> Result<Value, ()> {
-        todo!()
+        let value = self.expression.evaluate()?;
+
+        match value {
+            Value::Primitive(v) => {
+                match v {
+                    Primitive::Boolean(b) => {
+                        Ok(Value::Primitive(Primitive::Boolean(!b)))
+                    }
+                    Primitive::Nil => {
+                        Ok(Value::Primitive(Primitive::Boolean(true)))
+                    }
+                    Primitive::Number(n) => {
+                        Ok(Value::Primitive(Primitive::Boolean(n == 0.0)))
+                    }
+                    Primitive::String(s) => {
+                        Ok(Value::Primitive(Primitive::Boolean(!s.is_empty())))
+                    }
+                    _ => { Err(()) }
+                }
+            }
+        }
     }
 }
 
@@ -300,7 +320,18 @@ impl Expression for UnaryMinusExpression {
     }
 
     fn evaluate(&self) -> Result<Value, ()> {
-        todo!()
+        let value = self.expression.evaluate()?;
+
+        match value {
+            Value::Primitive(v) => {
+                match v {
+                    Primitive::Number(n) => {
+                        Ok(Value::Primitive(Primitive::Number(-n)))
+                    }
+                    _ => { Err(()) }
+                }
+            }
+        }
     }
 }
 

@@ -233,6 +233,7 @@ enum Value {
     Primitive(Primitive),
 }
 
+#[allow(unused)]
 struct LiteralExpression {
     lexeme: Lexeme,
     literal: Primitive,
@@ -307,7 +308,6 @@ impl Expression for UnaryNotExpression {
                     Primitive::String(s) => {
                         Ok(Value::Primitive(Primitive::Boolean(!s.is_empty())))
                     }
-                    _ => { Err(()) }
                 }
             }
         }
@@ -354,7 +354,25 @@ impl Expression for BinaryExpression {
     }
 
     fn evaluate(&self) -> Result<Value, ()> {
-        todo!()
+        let left = self.left.evaluate()?;
+        let right = self.right.evaluate()?;
+        
+        match (left, right) {
+            (Value::Primitive(l), Value::Primitive(r)) => {
+                match (l, r) {
+                    (Primitive::Number(l), Primitive::Number(r)) => {
+                        match self.lexeme.token {
+                            Token::STAR => { Ok(Value::Primitive(Primitive::Number(l * r))) }
+                            Token::MINUS => { Ok(Value::Primitive(Primitive::Number(l - r))) }
+                            Token::PLUS => { Ok(Value::Primitive(Primitive::Number(l + r))) }
+                            Token::SLASH => { Ok(Value::Primitive(Primitive::Number(l / r))) }
+                            _ => { Err(()) }
+                        }
+                    }
+                    (_, _) => { Err(()) }
+                }
+            }
+        }
     }
 }
 

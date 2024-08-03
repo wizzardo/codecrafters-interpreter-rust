@@ -214,7 +214,9 @@ fn main() {
                         }
                     }
                 }
-                Err(_) => { panic!() }
+                Err(_) => {
+                    std::process::exit(70);
+                }
             }
         }
         _ => {

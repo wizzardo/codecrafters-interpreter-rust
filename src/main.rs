@@ -356,7 +356,7 @@ impl Expression for BinaryExpression {
     fn evaluate(&self) -> Result<Value, ()> {
         let left = self.left.evaluate()?;
         let right = self.right.evaluate()?;
-        
+
         match (left, right) {
             (Value::Primitive(l), Value::Primitive(r)) => {
                 match (l, r) {
@@ -366,6 +366,12 @@ impl Expression for BinaryExpression {
                             Token::MINUS => { Ok(Value::Primitive(Primitive::Number(l - r))) }
                             Token::PLUS => { Ok(Value::Primitive(Primitive::Number(l + r))) }
                             Token::SLASH => { Ok(Value::Primitive(Primitive::Number(l / r))) }
+                            _ => { Err(()) }
+                        }
+                    }
+                    (Primitive::String(l), Primitive::String(r)) => {
+                        match self.lexeme.token {
+                            Token::PLUS => { Ok(Value::Primitive(Primitive::String(format!("{l}{r}")))) }
                             _ => { Err(()) }
                         }
                     }

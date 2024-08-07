@@ -443,7 +443,7 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let mut operands = vec![];
     let mut operations = vec![];
     while let Some(lexeme) = iterator.peek() {
-        let expression = if let true = lexeme.token.is_literal() {
+        let expression = if lexeme.token.is_literal() {
             let expression = to_literal_expression(lexeme);
             iterator.advance();
             expression
@@ -494,14 +494,14 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         //     println!("{:?}", x.token);
         // }
 
-        let lexeme = operations.remove(operations.len() - 1);
-        let left = operands.remove(operands.len() - 1);
-        let right = operands.remove(operands.len() - 1);
+        let lexeme = operations.pop().unwrap();
+        let left = operands.pop().unwrap();
+        let right = operands.pop().unwrap();
         let mut exp = BinaryExpression { lexeme, left, right };
 
         while operands.is_empty().not() {
-            let right = operands.remove(operands.len() - 1);
-            let lexeme = operations.remove(operations.len() - 1);
+            let right = operands.pop().unwrap();
+            let lexeme = operations.pop().unwrap();
             exp = BinaryExpression { lexeme, left: Box::new(exp), right };
         }
 

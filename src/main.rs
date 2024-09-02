@@ -226,9 +226,13 @@ fn main() {
             let statements = parse_statements(lexemes);
             let mut _result;
             for x in statements {
+                eprintln!("evaluating {}", x.to_string());
                 _result = match x.evaluate() {
                     Ok(v) => { v }
-                    Err(_) => { std::process::exit(70); }
+                    Err(s) => {
+                        eprintln!("{s}");
+                        std::process::exit(70);
+                    }
                 };
             }
         }
@@ -241,7 +245,7 @@ fn main() {
 
 trait Expression {
     fn to_string(&self) -> String;
-    fn evaluate(&self) -> Result<Value, ()>;
+    fn evaluate(&self) -> Result<Value, String>;
 }
 
 enum Value {
@@ -291,7 +295,7 @@ impl Expression for LiteralExpression {
         self.literal.to_string()
     }
 
-    fn evaluate(&self) -> Result<Value, ()> {
+    fn evaluate(&self) -> Result<Value, String> {
         Ok(Value::Primitive(self.literal.clone()))
     }
 }
@@ -301,7 +305,7 @@ impl Expression for GroupExpression {
         format!("(group {})", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, ()> {
+    fn evaluate(&self) -> Result<Value, String> {
         self.expression.evaluate()
     }
 }
@@ -311,7 +315,7 @@ impl Expression for UnaryNotExpression {
         format!("(! {})", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, ()> {
+    fn evaluate(&self) -> Result<Value, String> {
         let value = self.expression.evaluate()?;
 
         match value {
@@ -340,7 +344,7 @@ impl Expression for UnaryMinusExpression {
         format!("(- {})", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, ()> {
+    fn evaluate(&self) -> Result<Value, String> {
         let value = self.expression.evaluate()?;
 
         match value {
@@ -349,7 +353,7 @@ impl Expression for UnaryMinusExpression {
                     Primitive::Number(n) => {
                         Ok(Value::Primitive(Primitive::Number(-n)))
                     }
-                    _ => { Err(()) }
+                    p => { Err(format!("Cannot apply unary minus to {}", p.to_string())) }
                 }
             }
         }
@@ -361,7 +365,7 @@ impl Expression for UnaryPrintExpression {
         format!("print {}", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, ()> {
+    fn evaluate(&self) -> Result<Value, String> {
         let value = self.expression.evaluate()?;
 
         match value {
@@ -396,7 +400,7 @@ impl Expression for BinaryExpression {
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, ()> {
+    fn evaluate(&self) -> Result<Value, String> {
         let left = self.left.evaluate()?;
         let right = self.right.evaluate()?;
 
@@ -415,7 +419,7 @@ impl Expression for BinaryExpression {
                             Token::LESS_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l <= r))) }
                             Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l == r))) }
                             Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l != r))) }
-                            _ => { Err(()) }
+                            _ => { Err(format!("Cannot apply {:?} expression to number and number", self.lexeme.token)) }
                         }
                     }
                     (Primitive::String(l), Primitive::String(r)) => {
@@ -423,21 +427,21 @@ impl Expression for BinaryExpression {
                             Token::PLUS => { Ok(Value::Primitive(Primitive::String(format!("{l}{r}")))) }
                             Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l == r))) }
                             Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l != r))) }
-                            _ => { Err(()) }
+                            _ => { Err(format!("Cannot apply {:?} expression to String and String", self.lexeme.token)) }
                         }
                     }
                     (Primitive::Boolean(l), Primitive::Boolean(r)) => {
                         match self.lexeme.token {
                             Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l == r))) }
                             Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(l != r))) }
-                            _ => { Err(()) }
+                            _ => { Err(format!("Cannot apply {:?} expression to boolean and boolean", self.lexeme.token)) }
                         }
                     }
-                    (_, _) => {
+                    (l, r) => {
                         match self.lexeme.token {
                             Token::EQUAL_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(false))) }
                             Token::BANG_EQUAL => { Ok(Value::Primitive(Primitive::Boolean(true))) }
-                            _ => { Err(()) }
+                            _ => { Err(format!("Cannot apply {:?} expression to {} and {}", self.lexeme.token, l.to_string(), r.to_string())) }
                         }
                     }
                 }
@@ -558,6 +562,15 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 fn create_binary(mut operands: Vec<Box<dyn Expression>>, mut operations: Vec<Lexeme>) -> Box<dyn Expression> {
     loop {
         let option = operations.iter().enumerate().find(|(_, it)| { it.token == Token::STAR || it.token == Token::SLASH });
+        match option {
+            None => { break; }
+            Some((i, _)) => {
+                reduce_operation(&mut operands, &mut operations, i);
+            }
+        }
+    };
+    loop {
+        let option = operations.iter().enumerate().find(|(_, it)| { it.token == Token::PLUS || it.token == Token::MINUS });
         match option {
             None => { break; }
             Some((i, _)) => {
@@ -1098,6 +1111,24 @@ mod tests {
         match result {
             Value::Primitive(v) => {
                 assert_eq!("144.0", v.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn test_evaluate_3() {
+        // let (lexemes, _) = tokenize("(\"baz\" == \"bar\") == (\"hello\" != \"quz\");".chars());
+        let (lexemes, _) = tokenize("25 - 81 >= -41 * 2 / 41 + 66;".chars());
+
+        let expression = parse_lexemes(lexemes);
+        println!("{}", expression.to_string());
+        let result = expression.evaluate();
+        match result {
+            Ok(value) => {
+                println!("ok");
+            }
+            Err(_) => {
+                println!("err");
             }
         }
     }

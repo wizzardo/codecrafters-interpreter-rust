@@ -313,6 +313,18 @@ struct BinaryExpression {
     right: Box<dyn Expression>,
 }
 
+struct NoopExpression {}
+
+impl Expression for NoopExpression {
+    fn to_string(&self) -> String {
+        format!("noop")
+    }
+
+    fn evaluate(&self, _scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        Ok(Value::Primitive(Primitive::Nil))
+    }
+}
+
 impl Expression for LiteralExpression {
     fn to_string(&self) -> String {
         self.literal.to_string()
@@ -725,19 +737,22 @@ fn parse_print(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 fn parse_var(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
-    let name = iterator.peek().expect("expected a variable name").clone();
+    let name = iterator.peek().expect("expected a variable name");
+    let name = name.src.iter().collect();
     iterator.advance();
     match iterator.peek().expect("expected a variable name").token {
-        Token::EQUAL => {}
+        Token::EQUAL => {
+            iterator.advance();
+            Box::new(VariableDeclarationExpression { lexeme, name, expression: parse(iterator) })
+        }
+        Token::SEMICOLON => {
+            Box::new(VariableDeclarationExpression { lexeme, name, expression: Box::new(NoopExpression {}) })
+        }
         _ => {
-            println!("expected '=' after variable name");
+            println!("expected '=' or ';' after variable name");
             std::process::exit(65);
         }
-    };
-    iterator.advance();
-
-    let name = name.src.iter().collect();
-    Box::new(VariableDeclarationExpression { lexeme, name, expression: parse(iterator) })
+    }
 }
 
 fn parse_identifier(iterator: &mut LexemeIterator) -> Box<dyn Expression> {

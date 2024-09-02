@@ -4,6 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
 use std::str::Chars;
+use std::any::Any;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[allow(non_camel_case_types)]
@@ -75,6 +76,7 @@ impl Token {
             Token::LESS_EQUAL => { true }
             Token::BANG_EQUAL => { true }
             Token::EQUAL_EQUAL => { true }
+            Token::EQUAL => { true }
             _ => { false }
         }
     }
@@ -245,9 +247,12 @@ fn main() {
     }
 }
 
-trait Expression {
+trait Expression: Any {
     fn to_string(&self) -> String;
     fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String>;
+    fn to_variable(&self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Clone)]
@@ -444,6 +449,10 @@ impl Expression for VariableExpression {
             }
         }
     }
+
+    fn to_variable(&self) -> Option<String> {
+        Some(self.name.clone())
+    }
 }
 
 impl Expression for BinaryExpression {
@@ -459,12 +468,26 @@ impl Expression for BinaryExpression {
             Token::LESS_EQUAL => { "<=" }
             Token::EQUAL_EQUAL => { "==" }
             Token::BANG_EQUAL => { "!=" }
+            Token::EQUAL => { "=" }
             t => { panic!("{:?} is not an action for binary expression", t) }
         };
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
     }
 
     fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        if self.lexeme.token == Token::EQUAL {
+            return match self.left.to_variable() {
+                Some(variable) => {
+                    let value = self.right.evaluate(scope)?;
+                    scope.insert(variable, value.clone());
+                    Ok(value)
+                }
+                None => {
+                    // Err(format!("Cannot assign not a variable"));
+                    std::process::exit(65);
+                }
+            };
+        }
         let left = self.left.evaluate(scope)?;
         let right = self.right.evaluate(scope)?;
 

@@ -199,7 +199,8 @@ fn main() {
                 std::process::exit(65);
             }
             let expression = parse_lexemes(lexemes);
-            let result = expression.evaluate();
+            let mut scope = HashMap::new();
+            let result = expression.evaluate(&mut scope);
             match result {
                 Ok(value) => {
                     match value {
@@ -223,11 +224,12 @@ fn main() {
             if result.is_err() {
                 std::process::exit(65);
             }
+            let mut scope = HashMap::new();
             let statements = parse_statements(lexemes);
             let mut _result;
             for x in statements {
                 eprintln!("evaluating {}", x.to_string());
-                _result = match x.evaluate() {
+                _result = match x.evaluate(&mut scope) {
                     Ok(v) => { v }
                     Err(s) => {
                         eprintln!("{s}");
@@ -245,11 +247,19 @@ fn main() {
 
 trait Expression {
     fn to_string(&self) -> String;
-    fn evaluate(&self) -> Result<Value, String>;
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String>;
 }
 
+#[derive(Clone)]
 enum Value {
     Primitive(Primitive),
+}
+
+#[allow(unused)]
+impl Value {
+    fn to_string(&self) -> String {
+        match self { Value::Primitive(p) => { p.to_string() } }
+    }
 }
 
 #[allow(unused)]
@@ -278,9 +288,22 @@ struct UnaryMinusExpression {
 }
 
 #[allow(unused)]
-struct UnaryPrintExpression {
+struct PrintExpression {
     lexeme: Lexeme,
     expression: Box<dyn Expression>,
+}
+
+#[allow(unused)]
+struct VariableDeclarationExpression {
+    lexeme: Lexeme,
+    name: String,
+    expression: Box<dyn Expression>,
+}
+
+#[allow(unused)]
+struct VariableExpression {
+    lexeme: Lexeme,
+    name: String,
 }
 
 #[allow(unused)]
@@ -295,7 +318,7 @@ impl Expression for LiteralExpression {
         self.literal.to_string()
     }
 
-    fn evaluate(&self) -> Result<Value, String> {
+    fn evaluate(&self, _scope: &mut HashMap<String, Value>) -> Result<Value, String> {
         Ok(Value::Primitive(self.literal.clone()))
     }
 }
@@ -305,8 +328,8 @@ impl Expression for GroupExpression {
         format!("(group {})", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, String> {
-        self.expression.evaluate()
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        self.expression.evaluate(scope)
     }
 }
 
@@ -315,8 +338,8 @@ impl Expression for UnaryNotExpression {
         format!("(! {})", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, String> {
-        let value = self.expression.evaluate()?;
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        let value = self.expression.evaluate(scope)?;
 
         match value {
             Value::Primitive(v) => {
@@ -344,8 +367,8 @@ impl Expression for UnaryMinusExpression {
         format!("(- {})", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, String> {
-        let value = self.expression.evaluate()?;
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        let value = self.expression.evaluate(scope)?;
 
         match value {
             Value::Primitive(v) => {
@@ -360,13 +383,13 @@ impl Expression for UnaryMinusExpression {
     }
 }
 
-impl Expression for UnaryPrintExpression {
+impl Expression for PrintExpression {
     fn to_string(&self) -> String {
         format!("print {}", self.expression.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, String> {
-        let value = self.expression.evaluate()?;
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        let value = self.expression.evaluate(scope)?;
 
         match value {
             Value::Primitive(v) => {
@@ -379,6 +402,35 @@ impl Expression for UnaryPrintExpression {
             }
         }
         Ok(Value::Primitive(Primitive::Nil))
+    }
+}
+
+impl Expression for VariableDeclarationExpression {
+    fn to_string(&self) -> String {
+        format!("var {} = {}", self.name, self.expression.to_string())
+    }
+
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        let value = self.expression.evaluate(scope)?;
+        scope.insert(self.name.clone(), value);
+        Ok(Value::Primitive(Primitive::Nil))
+    }
+}
+
+impl Expression for VariableExpression {
+    fn to_string(&self) -> String {
+        format!("var {}", self.name)
+    }
+
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        match scope.get(&self.name) {
+            None => {
+                Err(format!("Variable {} not found", self.name))
+            }
+            Some(v) => {
+                Ok(v.clone())
+            }
+        }
     }
 }
 
@@ -400,9 +452,9 @@ impl Expression for BinaryExpression {
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
     }
 
-    fn evaluate(&self) -> Result<Value, String> {
-        let left = self.left.evaluate()?;
-        let right = self.right.evaluate()?;
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        let left = self.left.evaluate(scope)?;
+        let right = self.right.evaluate(scope)?;
 
         match (left, right) {
             (Value::Primitive(l), Value::Primitive(r)) => {
@@ -514,6 +566,10 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_unary_minus(iterator)
         } else if lexeme.token == Token::PRINT {
             parse_print(iterator)
+        } else if lexeme.token == Token::VAR {
+            parse_var(iterator)
+        } else if lexeme.token == Token::IDENTIFIER {
+            parse_identifier(iterator)
         } else if lexeme.token == Token::SEMICOLON {
             iterator.advance();
             if operands.is_empty() {
@@ -663,7 +719,32 @@ fn parse_unary_minus(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 fn parse_print(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
-    Box::new(UnaryPrintExpression { lexeme, expression: parse(iterator) })
+    Box::new(PrintExpression { lexeme, expression: parse(iterator) })
+}
+
+fn parse_var(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    iterator.advance();
+    let name = iterator.peek().expect("expected a variable name").clone();
+    iterator.advance();
+    match iterator.peek().expect("expected a variable name").token {
+        Token::EQUAL => {}
+        _ => {
+            println!("expected '=' after variable name");
+            std::process::exit(65);
+        }
+    };
+    iterator.advance();
+
+    let name = name.src.iter().collect();
+    Box::new(VariableDeclarationExpression { lexeme, name, expression: parse(iterator) })
+}
+
+fn parse_identifier(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    iterator.advance();
+    let name = lexeme.src.iter().collect();
+    Box::new(VariableExpression { lexeme: lexeme.clone(), name })
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {
@@ -1094,7 +1175,8 @@ mod tests {
         let (lexemes, _) = tokenize("78 == \"78\"".chars());
 
         let expression = parse_lexemes(lexemes);
-        let result = expression.evaluate().unwrap();
+        let mut scope = HashMap::new();
+        let result = expression.evaluate(&mut scope).unwrap();
         match result {
             Value::Primitive(v) => {
                 assert_eq!("false", v.to_string())
@@ -1107,7 +1189,8 @@ mod tests {
         let (lexemes, _) = tokenize("(96 * 2 + 48 * 2) / (2)".chars());
 
         let expression = parse_lexemes(lexemes);
-        let result = expression.evaluate().unwrap();
+        let mut scope = HashMap::new();
+        let result = expression.evaluate(&mut scope).unwrap();
         match result {
             Value::Primitive(v) => {
                 assert_eq!("144.0", v.to_string())
@@ -1117,19 +1200,11 @@ mod tests {
 
     #[test]
     fn test_evaluate_3() {
-        // let (lexemes, _) = tokenize("(\"baz\" == \"bar\") == (\"hello\" != \"quz\");".chars());
-        let (lexemes, _) = tokenize("25 - 81 >= -41 * 2 / 41 + 66;".chars());
+        let (lexemes, _) = tokenize("var foo = 1".chars());
 
         let expression = parse_lexemes(lexemes);
-        println!("{}", expression.to_string());
-        let result = expression.evaluate();
-        match result {
-            Ok(value) => {
-                println!("ok");
-            }
-            Err(_) => {
-                println!("err");
-            }
-        }
+        let mut scope = HashMap::new();
+        let result = expression.evaluate(&mut scope).unwrap();
+        assert_eq!("1.0", scope.get("foo").expect("expect varialbe to be there").to_string());
     }
 }

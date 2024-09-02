@@ -3,7 +3,6 @@ use std::env;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
-use std::ops::Not;
 use std::str::Chars;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -219,6 +218,20 @@ fn main() {
                 }
             }
         }
+        "run" => {
+            let (lexemes, result) = tokenize_file(filename);
+            if result.is_err() {
+                std::process::exit(65);
+            }
+            let expression = parse_lexemes(lexemes);
+            let result = expression.evaluate();
+            match result {
+                Ok(_) => {}
+                Err(_) => {
+                    std::process::exit(70);
+                }
+            }
+        }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
             return;
@@ -256,6 +269,12 @@ struct UnaryNotExpression {
 
 #[allow(unused)]
 struct UnaryMinusExpression {
+    lexeme: Lexeme,
+    expression: Box<dyn Expression>,
+}
+
+#[allow(unused)]
+struct UnaryPrintExpression {
     lexeme: Lexeme,
     expression: Box<dyn Expression>,
 }
@@ -337,6 +356,28 @@ impl Expression for UnaryMinusExpression {
     }
 }
 
+impl Expression for UnaryPrintExpression {
+    fn to_string(&self) -> String {
+        format!("print {}", self.expression.to_string())
+    }
+
+    fn evaluate(&self) -> Result<Value, ()> {
+        let value = self.expression.evaluate()?;
+
+        match value {
+            Value::Primitive(v) => {
+                match v {
+                    Primitive::Number(n) => { println!("{}", n); }
+                    Primitive::String(s) => { println!("{}", s); }
+                    Primitive::Boolean(b) => { println!("{}", b); }
+                    Primitive::Nil => { println!("nil"); }
+                }
+            }
+        }
+        Ok(Value::Primitive(Primitive::Nil))
+    }
+}
+
 impl Expression for BinaryExpression {
     fn to_string(&self) -> String {
         let action = match self.lexeme.token {
@@ -406,6 +447,7 @@ impl Expression for BinaryExpression {
 }
 
 #[derive(Clone)]
+#[derive(Debug)]
 enum Primitive {
     Number(f64),
     String(String),
@@ -439,9 +481,14 @@ fn parse_lexemes(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
     return parse(&mut iterator);
 }
 
+fn parse_statements(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
+    let mut iterator = LexemeIterator::from(lexemes);
+    return parse(&mut iterator);
+}
+
 fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
-    let mut operands = vec![];
-    let mut operations = vec![];
+    let mut operands: Vec<Box<dyn Expression>> = vec![];
+    let mut operations: Vec<Lexeme> = vec![];
     while let Some(lexeme) = iterator.peek() {
         let expression = if lexeme.token.is_literal() {
             let expression = to_literal_expression(lexeme);
@@ -453,6 +500,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_unary_not(iterator)
         } else if lexeme.token == Token::MINUS {
             parse_unary_minus(iterator)
+        } else if lexeme.token == Token::PRINT {
+            parse_print(iterator)
         } else {
             writeln!(io::stderr(), "unexpected token {:?}", lexeme.token).unwrap();
             std::process::exit(65);
@@ -484,29 +533,37 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     } else if operands.len() == 0 {
         panic!("no expression found")
     } else {
-        operands.reverse();
-        operations.reverse();
+        create_binary(operands, operations)
+    }
+}
 
-        // for x in &operands {
-        //     println!("{}", x.to_string());
-        // }
-        // for x in &operations {
-        //     println!("{:?}", x.token);
-        // }
-
-        let lexeme = operations.pop().unwrap();
-        let left = operands.pop().unwrap();
-        let right = operands.pop().unwrap();
-        let mut exp = BinaryExpression { lexeme, left, right };
-
-        while operands.is_empty().not() {
-            let right = operands.pop().unwrap();
-            let lexeme = operations.pop().unwrap();
-            exp = BinaryExpression { lexeme, left: Box::new(exp), right };
+fn create_binary(mut operands: Vec<Box<dyn Expression>>, mut operations: Vec<Lexeme>) -> Box<dyn Expression> {
+    loop {
+        let option = operations.iter().enumerate().find(|(_, it)| { it.token == Token::STAR || it.token == Token::SLASH });
+        match option {
+            None => { break; }
+            Some((i, _)) => {
+                reduce_operation(&mut operands, &mut operations, i);
+            }
+        }
+    };
+    loop {
+        if operations.is_empty() {
+            break;
         }
 
-        Box::new(exp)
-    }
+        reduce_operation(&mut operands, &mut operations, 0);
+    };
+
+    operands.remove(0)
+}
+
+fn reduce_operation(operands: &mut Vec<Box<dyn Expression>>, operations: &mut Vec<Lexeme>, i: usize) {
+    let lexeme = operations.remove(i);
+    let left = operands.remove(i);
+    let right = operands.remove(i);
+    let exp = BinaryExpression { lexeme, left, right };
+    operands.insert(i, Box::new(exp));
 }
 
 fn parse_one(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
@@ -570,6 +627,12 @@ fn parse_unary_minus(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
     Box::new(UnaryMinusExpression { lexeme, expression: parse_one(iterator) })
+}
+
+fn parse_print(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    iterator.advance();
+    Box::new(UnaryPrintExpression { lexeme, expression: parse(iterator) })
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {
@@ -968,7 +1031,7 @@ mod tests {
         let (lexemes, _) = tokenize("1 + 2 * 3".chars());
 
         let expression = parse_lexemes(lexemes);
-        assert_eq!("(* (+ 1.0 2.0) 3.0)", expression.to_string())
+        assert_eq!("(+ 1.0 (* 2.0 3.0))", expression.to_string())
     }
 
     #[test]
@@ -1004,6 +1067,19 @@ mod tests {
         match result {
             Value::Primitive(v) => {
                 assert_eq!("false", v.to_string())
+            }
+        }
+    }
+
+    #[test]
+    fn test_evaluate_2() {
+        let (lexemes, _) = tokenize("(96 * 2 + 48 * 2) / (2)".chars());
+
+        let expression = parse_lexemes(lexemes);
+        let result = expression.evaluate().unwrap();
+        match result {
+            Value::Primitive(v) => {
+                assert_eq!("144.0", v.to_string())
             }
         }
     }

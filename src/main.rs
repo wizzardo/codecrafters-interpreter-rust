@@ -223,13 +223,13 @@ fn main() {
             if result.is_err() {
                 std::process::exit(65);
             }
-            let expression = parse_lexemes(lexemes);
-            let result = expression.evaluate();
-            match result {
-                Ok(_) => {}
-                Err(_) => {
-                    std::process::exit(70);
-                }
+            let statements = parse_statements(lexemes);
+            let mut _result;
+            for x in statements {
+                _result = match x.evaluate() {
+                    Ok(v) => { v }
+                    Err(_) => { std::process::exit(70); }
+                };
             }
         }
         _ => {
@@ -481,9 +481,17 @@ fn parse_lexemes(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
     return parse(&mut iterator);
 }
 
-fn parse_statements(lexemes: Vec<Lexeme>) -> Box<dyn Expression> {
+fn parse_statements(lexemes: Vec<Lexeme>) -> Vec<Box<dyn Expression>> {
     let mut iterator = LexemeIterator::from(lexemes);
-    return parse(&mut iterator);
+    let mut statements: Vec<Box<dyn Expression>> = vec![];
+    loop {
+        let exp = parse(&mut iterator);
+        statements.push(exp);
+        if iterator.peek().is_none() {
+            break;
+        }
+    }
+    return statements;
 }
 
 fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
@@ -502,6 +510,12 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_unary_minus(iterator)
         } else if lexeme.token == Token::PRINT {
             parse_print(iterator)
+        } else if lexeme.token == Token::SEMICOLON {
+            iterator.advance();
+            if operands.is_empty() {
+                std::process::exit(65);
+            }
+            break
         } else {
             writeln!(io::stderr(), "unexpected token {:?}", lexeme.token).unwrap();
             std::process::exit(65);
@@ -514,6 +528,10 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
                 break
             }
             Some(lexeme) => {
+                if lexeme.token == Token::SEMICOLON {
+                    iterator.advance();
+                    break
+                }
                 if lexeme.token.is_binary_operator() {
                     let lexeme = lexeme.clone();
                     operations.push(lexeme);

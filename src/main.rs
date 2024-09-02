@@ -670,11 +670,29 @@ fn create_binary(mut operands: Vec<Box<dyn Expression>>, mut operations: Vec<Lex
         }
     };
     loop {
+        let option = operations.iter().enumerate().find(|(_, it)| {
+            it.token == Token::LESS
+                || it.token == Token::LESS_EQUAL
+                || it.token == Token::GREATER
+                || it.token == Token::GREATER_EQUAL
+                || it.token == Token::BANG_EQUAL
+                || it.token == Token::EQUAL_EQUAL
+        });
+        match option {
+            None => { break; }
+            Some((i, _)) => {
+                reduce_operation(&mut operands, &mut operations, i);
+            }
+        }
+    };
+    loop {
         if operations.is_empty() {
             break;
         }
 
-        reduce_operation(&mut operands, &mut operations, 0);
+        // should be '=' as last operations, reverse order here
+        let i = operations.len() - 1;
+        reduce_operation(&mut operands, &mut operations, i);
     };
 
     operands.remove(0)
@@ -1242,7 +1260,7 @@ mod tests {
 
         let expression = parse_lexemes(lexemes);
         let mut scope = HashMap::new();
-        let result = expression.evaluate(&mut scope).unwrap();
-        assert_eq!("1.0", scope.get("foo").expect("expect varialbe to be there").to_string());
+        let _ = expression.evaluate(&mut scope).unwrap();
+        assert_eq!("1.0", scope.get("foo").expect("expect variable to be there").to_string());
     }
 }

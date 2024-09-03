@@ -5,6 +5,9 @@ use std::fs;
 use std::io::{self, Write};
 use std::str::Chars;
 use std::any::Any;
+use std::cell::{RefCell};
+use std::collections::hash_map::Entry;
+use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[allow(non_camel_case_types)]
@@ -201,8 +204,8 @@ fn main() {
                 std::process::exit(65);
             }
             let expression = parse_lexemes(lexemes);
-            let mut scope = HashMap::new();
-            let result = expression.evaluate(&mut scope);
+            let scope = Rc::new(RefCell::new(Scope::new(None)));
+            let result = expression.evaluate(&scope);
             match result {
                 Ok(value) => {
                     match value {
@@ -226,12 +229,12 @@ fn main() {
             if result.is_err() {
                 std::process::exit(65);
             }
-            let mut scope = HashMap::new();
+            let scope = Rc::new(RefCell::new(Scope::new(None)));
             let statements = parse_statements(lexemes);
             let mut _result;
             for x in statements {
                 eprintln!("evaluating {}", x.to_string());
-                _result = match x.evaluate(&mut scope) {
+                _result = match x.evaluate(&scope) {
                     Ok(v) => { v }
                     Err(s) => {
                         eprintln!("{s}");
@@ -249,9 +252,49 @@ fn main() {
 
 trait Expression: Any {
     fn to_string(&self) -> String;
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String>;
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String>;
     fn to_variable(&self) -> Option<String> {
         None
+    }
+}
+
+struct Scope {
+    map: HashMap<String, Value>,
+    parent: Option<Rc<RefCell<Scope>>>,
+}
+
+impl Scope {
+    fn new(parent: Option<Rc<RefCell<Scope>>>) -> Self {
+        Scope { map: HashMap::new(), parent }
+    }
+    fn subscope(scope: &Rc<RefCell<Scope>>) -> Rc<RefCell<Scope>> {
+        Rc::new(RefCell::new(Scope::new(Some(Rc::clone(scope)))))
+    }
+    fn define(&mut self, key: String, value: Value) {
+        self.map.insert(key, value);
+    }
+    fn set(&mut self, key: String, value: Value) {
+        match self.map.entry(key.clone()) {
+            Entry::Occupied(mut e) => {
+                e.insert(value);
+            }
+            Entry::Vacant(_) => {
+                if let Some(p) = &self.parent {
+                    p.borrow_mut().set(key, value);
+                } else {
+                    std::process::exit(65);
+                }
+            }
+        };
+    }
+    fn get(&self, key: &String) -> Option<Value> {
+        let mut option = self.map.get(key).map(|v| v.clone());
+        if option.is_none() {
+            if let Some(parent) = &self.parent {
+                option = parent.borrow().get(key);
+            }
+        }
+        option
     }
 }
 
@@ -332,7 +375,7 @@ impl Expression for NoopExpression {
         format!("noop")
     }
 
-    fn evaluate(&self, _scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, _scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         Ok(Value::Primitive(Primitive::Nil))
     }
 }
@@ -342,7 +385,7 @@ impl Expression for LiteralExpression {
         self.literal.to_string()
     }
 
-    fn evaluate(&self, _scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, _scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         Ok(Value::Primitive(self.literal.clone()))
     }
 }
@@ -352,7 +395,7 @@ impl Expression for GroupExpression {
         format!("(group {})", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         self.expression.evaluate(scope)
     }
 }
@@ -363,10 +406,12 @@ impl Expression for BlockExpression {
         format!("(block {})", expressions.join(", "))
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         let mut value = Value::Primitive(Primitive::Nil);
+
+        let scope = Scope::subscope(scope);
         for x in &self.expressions {
-            value = x.evaluate(scope)?;
+            value = x.evaluate(&scope)?;
         }
         return Ok(value);
     }
@@ -377,7 +422,7 @@ impl Expression for UnaryNotExpression {
         format!("(! {})", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
 
         match value {
@@ -406,7 +451,7 @@ impl Expression for UnaryMinusExpression {
         format!("(- {})", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
 
         match value {
@@ -427,7 +472,7 @@ impl Expression for PrintExpression {
         format!("print {}", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
 
         match value {
@@ -449,9 +494,9 @@ impl Expression for VariableDeclarationExpression {
         format!("var {} = {}", self.name, self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
-        scope.insert(self.name.clone(), value);
+        scope.borrow_mut().define(self.name.clone(), value);
         Ok(Value::Primitive(Primitive::Nil))
     }
 }
@@ -461,8 +506,8 @@ impl Expression for VariableExpression {
         format!("var {}", self.name)
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
-        match scope.get(&self.name) {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+        match scope.borrow().get(&self.name) {
             None => {
                 Err(format!("Variable {} not found", self.name))
             }
@@ -496,12 +541,12 @@ impl Expression for BinaryExpression {
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
     }
 
-    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
         if self.lexeme.token == Token::EQUAL {
             return match self.left.to_variable() {
                 Some(variable) => {
                     let value = self.right.evaluate(scope)?;
-                    scope.insert(variable, value.clone());
+                    scope.borrow_mut().set(variable, value.clone());
                     Ok(value)
                 }
                 None => {

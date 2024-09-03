@@ -281,6 +281,13 @@ struct GroupExpression {
 }
 
 #[allow(unused)]
+struct BlockExpression {
+    start: Lexeme,
+    end: Lexeme,
+    expressions: Vec<Box<dyn Expression>>,
+}
+
+#[allow(unused)]
 struct UnaryNotExpression {
     lexeme: Lexeme,
     expression: Box<dyn Expression>,
@@ -347,6 +354,21 @@ impl Expression for GroupExpression {
 
     fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
         self.expression.evaluate(scope)
+    }
+}
+
+impl Expression for BlockExpression {
+    fn to_string(&self) -> String {
+        let expressions: Vec<String> = self.expressions.iter().map(|x| x.to_string()).collect();
+        format!("(block {})", expressions.join(", "))
+    }
+
+    fn evaluate(&self, scope: &mut HashMap<String, Value>) -> Result<Value, String> {
+        let mut value = Value::Primitive(Primitive::Nil);
+        for x in &self.expressions {
+            value = x.evaluate(scope)?;
+        }
+        return Ok(value);
     }
 }
 
@@ -595,6 +617,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             expression
         } else if lexeme.token == Token::LEFT_PAREN {
             parse_group(iterator)
+        } else if lexeme.token == Token::LEFT_BRACE {
+            parse_block(iterator)
         } else if lexeme.token == Token::BANG {
             parse_unary_not(iterator)
         } else if lexeme.token == Token::MINUS {
@@ -755,6 +779,37 @@ fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     };
     iterator.advance();
     Box::new(GroupExpression { start, end, expression })
+}
+
+fn parse_block(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let start = iterator.peek().unwrap().clone();
+    iterator.advance();
+    if let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_BRACE {
+            writeln!(io::stderr(), "empty block expression").unwrap();
+            std::process::exit(65);
+        }
+    }
+    let mut expressions = vec![];
+    let end: Lexeme;
+    loop {
+        let expression = parse(iterator);
+        expressions.push(expression);
+        match iterator.peek() {
+            None => {
+                writeln!(io::stderr(), "unclosed block expression").unwrap();
+                std::process::exit(65);
+            }
+            Some(lexeme) => {
+                if lexeme.token == Token::RIGHT_BRACE {
+                    end = lexeme.clone();
+                    break;
+                }
+            }
+        };
+    }
+    iterator.advance();
+    Box::new(BlockExpression { start, end, expressions })
 }
 
 fn parse_unary_not(iterator: &mut LexemeIterator) -> Box<dyn Expression> {

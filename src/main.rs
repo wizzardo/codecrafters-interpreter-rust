@@ -4,7 +4,6 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
 use std::str::Chars;
-use std::any::Any;
 use std::cell::{RefCell};
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
@@ -250,7 +249,7 @@ fn main() {
     }
 }
 
-trait Expression: Any {
+trait Expression {
     fn to_string(&self) -> String;
     fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String>;
     fn to_variable(&self) -> Option<String> {

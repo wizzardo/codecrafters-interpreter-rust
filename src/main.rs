@@ -276,8 +276,7 @@ impl Scope {
         self.stack.last_mut().expect("Scope stack is empty").insert(key, value);
     }
     fn set(&mut self, key: String, value: Value) {
-        let size = self.stack.len();
-        for i in size - 1..=0 {
+        for i in (0..self.stack.len()).rev() {
             let map = self.stack.get_mut(i).unwrap();
             match map.entry(key.clone()) {
                 Entry::Occupied(mut e) => {
@@ -1377,5 +1376,17 @@ mod tests {
         for exp in expressions {
             exp.evaluate(&mut scope).unwrap();
         }
+    }
+
+    #[test]
+    fn test_run_2() {
+        let (lexemes, _) = tokenize("var a = 1; {a=2;} print a;".chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("2.0", scope.stack[0].get("a").expect("expect variable to be there").to_string());
     }
 }

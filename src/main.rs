@@ -4,9 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
 use std::str::Chars;
-use std::cell::{RefCell};
 use std::collections::hash_map::Entry;
-use std::rc::Rc;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[allow(non_camel_case_types)]
@@ -203,8 +201,8 @@ fn main() {
                 std::process::exit(65);
             }
             let expression = parse_lexemes(lexemes);
-            let scope = Rc::new(RefCell::new(Scope::new(None)));
-            let result = expression.evaluate(&scope);
+            let mut scope = Scope::new();
+            let result = expression.evaluate(&mut scope);
             match result {
                 Ok(value) => {
                     match value {
@@ -228,12 +226,12 @@ fn main() {
             if result.is_err() {
                 std::process::exit(65);
             }
-            let scope = Rc::new(RefCell::new(Scope::new(None)));
+            let mut scope = Scope::new();
             let statements = parse_statements(lexemes);
             let mut _result;
             for x in statements {
                 eprintln!("evaluating {}", x.to_string());
-                _result = match x.evaluate(&scope) {
+                _result = match x.evaluate(&mut scope) {
                     Ok(v) => { v }
                     Err(s) => {
                         eprintln!("{s}");
@@ -251,49 +249,55 @@ fn main() {
 
 trait Expression {
     fn to_string(&self) -> String;
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String>;
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String>;
     fn to_variable(&self) -> Option<String> {
         None
     }
 }
 
 struct Scope {
-    map: HashMap<String, Value>,
-    parent: Option<Rc<RefCell<Scope>>>,
+    stack: Vec<HashMap<String, Value>>,
 }
 
 impl Scope {
-    fn new(parent: Option<Rc<RefCell<Scope>>>) -> Self {
-        Scope { map: HashMap::new(), parent }
+    fn new() -> Self {
+        let mut stack: Vec<HashMap<String, Value>> = vec![];
+        stack.push(HashMap::new());
+        Scope { stack }
     }
-    fn subscope(scope: &Rc<RefCell<Scope>>) -> Rc<RefCell<Scope>> {
-        Rc::new(RefCell::new(Scope::new(Some(Rc::clone(scope)))))
+    fn push_scope(&mut self) {
+        self.stack.push(HashMap::new());
     }
+    fn pop_scope(&mut self) {
+        let _ = self.stack.pop();
+    }
+
     fn define(&mut self, key: String, value: Value) {
-        self.map.insert(key, value);
+        self.stack.last_mut().expect("Scope stack is empty").insert(key, value);
     }
     fn set(&mut self, key: String, value: Value) {
-        match self.map.entry(key.clone()) {
-            Entry::Occupied(mut e) => {
-                e.insert(value);
-            }
-            Entry::Vacant(_) => {
-                if let Some(p) = &self.parent {
-                    p.borrow_mut().set(key, value);
-                } else {
-                    std::process::exit(65);
+        let size = self.stack.len();
+        for i in size - 1..=0 {
+            let map = self.stack.get_mut(i).unwrap();
+            match map.entry(key.clone()) {
+                Entry::Occupied(mut e) => {
+                    e.insert(value);
+                    break;
                 }
-            }
-        };
+                Entry::Vacant(_) => {
+                    continue;
+                }
+            };
+        }
     }
-    fn get(&self, key: &String) -> Option<Value> {
-        let mut option = self.map.get(key).map(|v| v.clone());
-        if option.is_none() {
-            if let Some(parent) = &self.parent {
-                option = parent.borrow().get(key);
+    fn get(&self, key: &String) -> Option<&Value> {
+        for i in (0..self.stack.len()).rev() {
+            let option = self.stack.get(i).unwrap().get(key);
+            if option.is_some() {
+                return option;
             }
         }
-        option
+        None
     }
 }
 
@@ -374,7 +378,7 @@ impl Expression for NoopExpression {
         format!("noop")
     }
 
-    fn evaluate(&self, _scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, _scope: &mut Scope) -> Result<Value, String> {
         Ok(Value::Primitive(Primitive::Nil))
     }
 }
@@ -384,7 +388,7 @@ impl Expression for LiteralExpression {
         self.literal.to_string()
     }
 
-    fn evaluate(&self, _scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, _scope: &mut Scope) -> Result<Value, String> {
         Ok(Value::Primitive(self.literal.clone()))
     }
 }
@@ -394,7 +398,7 @@ impl Expression for GroupExpression {
         format!("(group {})", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         self.expression.evaluate(scope)
     }
 }
@@ -405,13 +409,14 @@ impl Expression for BlockExpression {
         format!("(block {})", expressions.join(", "))
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let mut value = Value::Primitive(Primitive::Nil);
 
-        let scope = Scope::subscope(scope);
+        scope.push_scope();
         for x in &self.expressions {
-            value = x.evaluate(&scope)?;
+            value = x.evaluate(scope)?;
         }
+        scope.pop_scope();
         return Ok(value);
     }
 }
@@ -421,7 +426,7 @@ impl Expression for UnaryNotExpression {
         format!("(! {})", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
 
         match value {
@@ -450,7 +455,7 @@ impl Expression for UnaryMinusExpression {
         format!("(- {})", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
 
         match value {
@@ -471,7 +476,7 @@ impl Expression for PrintExpression {
         format!("print {}", self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
 
         match value {
@@ -493,9 +498,9 @@ impl Expression for VariableDeclarationExpression {
         format!("var {} = {}", self.name, self.expression.to_string())
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
-        scope.borrow_mut().define(self.name.clone(), value);
+        scope.define(self.name.clone(), value);
         Ok(Value::Primitive(Primitive::Nil))
     }
 }
@@ -505,8 +510,8 @@ impl Expression for VariableExpression {
         format!("var {}", self.name)
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
-        match scope.borrow().get(&self.name) {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        match scope.get(&self.name) {
             None => {
                 Err(format!("Variable {} not found", self.name))
             }
@@ -540,17 +545,17 @@ impl Expression for BinaryExpression {
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
     }
 
-    fn evaluate(&self, scope: &Rc<RefCell<Scope>>) -> Result<Value, String> {
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         if self.lexeme.token == Token::EQUAL {
             return match self.left.to_variable() {
                 Some(variable) => {
                     let value = self.right.evaluate(scope)?;
-                    scope.borrow_mut().set(variable, value.clone());
+                    scope.set(variable, value.clone());
                     Ok(value)
                 }
                 None => {
-                    // Err(format!("Cannot assign not a variable"));
-                    std::process::exit(65);
+                    Err(format!("Cannot assign not a variable"))
+                    // std::process::exit(65);
                 }
             };
         }
@@ -678,7 +683,7 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             if operands.is_empty() {
                 std::process::exit(65);
             }
-            break
+            break;
         } else {
             writeln!(io::stderr(), "unexpected token {:?}", lexeme.token).unwrap();
             std::process::exit(65);
@@ -693,7 +698,7 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             Some(lexeme) => {
                 if lexeme.token == Token::SEMICOLON {
                     iterator.advance();
-                    break
+                    break;
                 }
                 if lexeme.token.is_binary_operator() {
                     let lexeme = lexeme.clone();
@@ -1330,7 +1335,7 @@ mod tests {
         let (lexemes, _) = tokenize("78 == \"78\"".chars());
 
         let expression = parse_lexemes(lexemes);
-        let mut scope = HashMap::new();
+        let mut scope = Scope::new();
         let result = expression.evaluate(&mut scope).unwrap();
         match result {
             Value::Primitive(v) => {
@@ -1344,7 +1349,7 @@ mod tests {
         let (lexemes, _) = tokenize("(96 * 2 + 48 * 2) / (2)".chars());
 
         let expression = parse_lexemes(lexemes);
-        let mut scope = HashMap::new();
+        let mut scope = Scope::new();
         let result = expression.evaluate(&mut scope).unwrap();
         match result {
             Value::Primitive(v) => {
@@ -1358,8 +1363,19 @@ mod tests {
         let (lexemes, _) = tokenize("var foo = 1".chars());
 
         let expression = parse_lexemes(lexemes);
-        let mut scope = HashMap::new();
+        let mut scope = Scope::new();
         let _ = expression.evaluate(&mut scope).unwrap();
-        assert_eq!("1.0", scope.get("foo").expect("expect variable to be there").to_string());
+        assert_eq!("1.0", scope.stack[0].get("foo").expect("expect variable to be there").to_string());
+    }
+
+    #[test]
+    fn test_run_1() {
+        let (lexemes, _) = tokenize("var quz = (17 * 25) - 87;{    var bar = \"hello\" + \"13\";    print bar;}print quz;".chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
     }
 }

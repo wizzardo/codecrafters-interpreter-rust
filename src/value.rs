@@ -15,7 +15,7 @@ impl Value {
             Value::Primitive(p) => {
                 match p {
                     Primitive::Number(v) => { *v != 0.0 }
-                    Primitive::String(v) => { !v.is_empty() }
+                    Primitive::String(v) => { true }
                     Primitive::Boolean(v) => { *v }
                     Primitive::Nil => { false }
                 }

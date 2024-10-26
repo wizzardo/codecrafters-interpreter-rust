@@ -75,6 +75,7 @@ impl Token {
             Token::EQUAL_EQUAL => { true }
             Token::EQUAL => { true }
             Token::OR => { true }
+            Token::AND => { true }
             _ => { false }
         }
     }

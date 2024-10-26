@@ -323,6 +323,7 @@ impl Expression for BinaryExpression {
             Token::BANG_EQUAL => { "!=" }
             Token::EQUAL => { "=" }
             Token::OR => { "or" }
+            Token::AND => { "and" }
             t => { panic!("{:?} is not an action for binary expression", t) }
         };
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
@@ -342,6 +343,21 @@ impl Expression for BinaryExpression {
                 }
             };
         }
+
+        if self.lexeme.token == Token::AND {
+            let left = self.left.evaluate(scope)?;
+            if left.is_true() {
+                let right = self.right.evaluate(scope)?;
+                if right.is_true() {
+                    return Ok(right)
+                } else {
+                    return Ok(Value::Primitive(Primitive::Boolean(false)));
+                }
+            } else {
+                return Ok(Value::Primitive(Primitive::Boolean(false)));
+            }
+        }
+
         let left = self.left.evaluate(scope)?;
         if self.lexeme.token == Token::OR {
             if left.is_true() {

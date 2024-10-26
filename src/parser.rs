@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -60,6 +60,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_if(iterator)
         } else if lexeme.token == Token::WHILE {
             parse_while(iterator)
+        } else if lexeme.token == Token::FOR {
+            parse_for(iterator)
         } else if lexeme.token == Token::LEFT_BRACE {
             parse_block(iterator)
         } else if lexeme.token == Token::BANG {
@@ -307,13 +309,74 @@ fn parse_while(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     Box::new(WhileExpression::new(condition, body))
 }
 
+fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    iterator.advance();
+    if let Some(l) = iterator.peek() {
+        if l.token != Token::LEFT_PAREN {
+            eprintln!("condition block expected");
+            std::process::exit(65);
+        }
+    }
+
+    iterator.advance();
+    if let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            eprintln!("empty for condition");
+            std::process::exit(65);
+        }
+    }
+
+
+    let before = if let Some(l) = iterator.peek() {
+        if l.token == Token::SEMICOLON {
+            iterator.advance();
+            None
+        } else {
+            Some(parse(iterator))
+        }
+    } else {
+        eprintln!("unexpected end of FOR statement");
+        std::process::exit(65);
+    };
+
+    let condition = parse(iterator);
+
+    let after = if let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            None
+        } else {
+            Some(parse(iterator))
+        }
+    } else {
+        eprintln!("unexpected end of FOR statement");
+        std::process::exit(65);
+    };
+
+    match iterator.peek() {
+        None => {
+            eprintln!("unclosed while condition");
+            std::process::exit(65);
+        }
+        Some(lexeme) => {
+            if lexeme.token != Token::RIGHT_PAREN {
+                eprintln!("{:?} != Token::RIGHT_PAREN", lexeme.token);
+                std::process::exit(65);
+            }
+        }
+    };
+    iterator.advance();
+
+    let body = parse(iterator);
+    Box::new(ForExpression::new(before, condition, after, body))
+}
+
 fn parse_block(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let start = iterator.peek().unwrap().clone();
     iterator.advance();
     if let Some(l) = iterator.peek() {
         if l.token == Token::RIGHT_BRACE {
-            eprintln!("empty block expression");
-            std::process::exit(65);
+            iterator.advance();
+            return Box::new(BlockExpression::new(start.clone(), start, Vec::new()))
         }
     }
     let mut expressions = vec![];

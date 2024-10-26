@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use crate::value::Value;
 
+#[derive(Debug)]
 pub struct Scope {
     stack: Vec<HashMap<String, Value>>,
 }

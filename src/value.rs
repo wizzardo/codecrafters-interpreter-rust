@@ -1,6 +1,7 @@
 use crate::primitive::Primitive;
 
 #[derive(Clone)]
+#[derive(Debug)]
 pub enum Value {
     Primitive(Primitive),
 }

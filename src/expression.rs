@@ -62,6 +62,20 @@ impl WhileExpression {
 }
 
 #[allow(unused)]
+pub struct ForExpression {
+    before: Option<Box<dyn Expression>>,
+    condition: Box<dyn Expression>,
+    after: Option<Box<dyn Expression>>,
+    body: Box<dyn Expression>,
+}
+
+impl ForExpression {
+    pub fn new(before: Option<Box<dyn Expression>>, condition: Box<dyn Expression>, after: Option<Box<dyn Expression>>, body: Box<dyn Expression>) -> Self {
+        ForExpression { before, condition, after, body }
+    }
+}
+
+#[allow(unused)]
 pub struct BlockExpression {
     start: Lexeme,
     end: Lexeme,
@@ -207,6 +221,39 @@ impl Expression for WhileExpression {
         while self.condition.evaluate(scope)?.is_true() {
             value = self.body.evaluate(scope)?;
         };
+        Ok(value)
+    }
+}
+
+impl Expression for ForExpression {
+    fn to_string(&self) -> String {
+        let before = match &self.before {
+            None => {"".to_string()}
+            Some(e) => {e.to_string()}
+        };
+        let after = match &self.after {
+            None => {"".to_string()}
+            Some(e) => {e.to_string()}
+        };
+        format!("(for ({before}; {}; {after}) {})", self.condition.to_string(), self.body.to_string())
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let mut value = Value::Primitive(Primitive::Nil);
+        scope.push_scope();
+        if let Some(e) = &self.before {
+            e.evaluate(scope)?;
+        }
+
+        scope.push_scope();
+        while self.condition.evaluate(scope)?.is_true() {
+            value = self.body.evaluate(scope)?;
+            if let Some(e) = &self.after {
+                e.evaluate(scope)?;
+            }
+        };
+        scope.pop_scope();
+        scope.pop_scope();
         Ok(value)
     }
 }

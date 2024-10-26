@@ -265,4 +265,59 @@ mod tests {
         }
         assert_eq!("3.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
     }
+
+    #[test]
+    fn test_run_for_1() {
+        let (lexemes, _) = tokenize(r##"
+            var a = 0;
+            for (var i = 0; i < 3;) {
+                i = i + 1;
+                a = i;
+            }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("3.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+    }
+
+    #[test]
+    fn test_run_for_2() {
+        let (lexemes, _) = tokenize(r##"
+            var a = 0;
+            var i = 0;
+            for (; i < 3; i = i + 1;) {
+                a = i;
+            }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("2.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+    }
+
+    #[test]
+    fn test_run_for_3() {
+        let (lexemes, _) = tokenize(r##"
+            var a = 0;
+            var i = 0;
+            for (; i < 3;) {
+                i = i + 1;
+                a = i;
+            }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("3.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+    }
 }

@@ -198,7 +198,14 @@ mod tests {
 
     #[test]
     fn test_run_1() {
-        let (lexemes, _) = tokenize("var quz = (17 * 25) - 87;{    var bar = \"hello\" + \"13\";    print bar;}print quz;".chars());
+        let (lexemes, _) = tokenize(r##"
+            var quz = (17 * 25) - 87;
+            {
+                var bar = "hello" + "13";
+                print bar;
+            }
+            print quz;
+        "##.chars());
 
         let expressions = parse_statements(lexemes);
         let mut scope = Scope::new();
@@ -209,7 +216,29 @@ mod tests {
 
     #[test]
     fn test_run_2() {
-        let (lexemes, _) = tokenize("var a = 1; {a=2;} print a;".chars());
+        let (lexemes, _) = tokenize("
+            var a = 1;
+            {
+               a = 2;
+            }
+            print a;
+        ".chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("2.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+    }
+
+    #[test]
+    fn test_run_if() {
+        let (lexemes, _) = tokenize(r##"
+            var a = 1;
+            if (true)
+                a = 2;
+        "##.chars());
 
         let expressions = parse_statements(lexemes);
         let mut scope = Scope::new();

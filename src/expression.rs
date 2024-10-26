@@ -37,6 +37,18 @@ impl GroupExpression {
 }
 
 #[allow(unused)]
+pub struct IfExpression {
+    condition: Box<dyn Expression>,
+    body: Box<dyn Expression>,
+}
+
+impl IfExpression {
+    pub fn new(condition: Box<dyn Expression>, body: Box<dyn Expression>) -> Self {
+        IfExpression { condition, body }
+    }
+}
+
+#[allow(unused)]
 pub struct BlockExpression {
     start: Lexeme,
     end: Lexeme,
@@ -152,6 +164,30 @@ impl Expression for GroupExpression {
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         self.expression.evaluate(scope)
+    }
+}
+
+impl Expression for IfExpression {
+    fn to_string(&self) -> String {
+        format!("(if ({}) {})", self.condition.to_string(), self.body.to_string())
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let check = self.condition.evaluate(scope)?;
+        match check {
+            Value::Primitive(p) => {
+                match p {
+                    Primitive::Boolean(b) => {
+                        if b {
+                            self.body.evaluate(scope)
+                        } else {
+                            Ok(Value::Primitive(Primitive::Nil))
+                        }
+                    }
+                    it => { Err(format!("if condition evaluated to '{it:?}' that is not a boolean")) }
+                }
+            }
+        }
     }
 }
 

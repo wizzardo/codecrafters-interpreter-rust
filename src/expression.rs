@@ -40,11 +40,12 @@ impl GroupExpression {
 pub struct IfExpression {
     condition: Box<dyn Expression>,
     body: Box<dyn Expression>,
+    else_body: Option<Box<dyn Expression>>,
 }
 
 impl IfExpression {
-    pub fn new(condition: Box<dyn Expression>, body: Box<dyn Expression>) -> Self {
-        IfExpression { condition, body }
+    pub fn new(condition: Box<dyn Expression>, body: Box<dyn Expression>, else_body: Option<Box<dyn Expression>>) -> Self {
+        IfExpression { condition, body, else_body: else_body }
     }
 }
 
@@ -180,6 +181,8 @@ impl Expression for IfExpression {
                     Primitive::Boolean(b) => {
                         if b {
                             self.body.evaluate(scope)
+                        } else if let Some(e) = &self.else_body {
+                            e.evaluate(scope)
                         } else {
                             Ok(Value::Primitive(Primitive::Nil))
                         }

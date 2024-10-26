@@ -247,4 +247,22 @@ mod tests {
         }
         assert_eq!("2.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
     }
+
+    #[test]
+    fn test_run_if_else() {
+        let (lexemes, _) = tokenize(r##"
+            var a = 1;
+            if (false)
+                a = 2;
+            else
+                a = 3;
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("3.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+    }
 }

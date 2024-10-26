@@ -255,7 +255,18 @@ fn parse_if(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     iterator.advance();
 
     let body = parse(iterator);
-    Box::new(IfExpression::new(condition, body))
+    let else_body = match iterator.peek() {
+        None => { None }
+        Some(lexeme) => {
+            if lexeme.token == Token::ELSE {
+                iterator.advance();
+                Some(parse(iterator))
+            } else {
+                None
+            }
+        }
+    };
+    Box::new(IfExpression::new(condition, body, else_body))
 }
 
 fn parse_block(iterator: &mut LexemeIterator) -> Box<dyn Expression> {

@@ -45,7 +45,19 @@ pub struct IfExpression {
 
 impl IfExpression {
     pub fn new(condition: Box<dyn Expression>, body: Box<dyn Expression>, else_body: Option<Box<dyn Expression>>) -> Self {
-        IfExpression { condition, body, else_body: else_body }
+        IfExpression { condition, body, else_body }
+    }
+}
+
+#[allow(unused)]
+pub struct WhileExpression {
+    condition: Box<dyn Expression>,
+    body: Box<dyn Expression>,
+}
+
+impl WhileExpression {
+    pub fn new(condition: Box<dyn Expression>, body: Box<dyn Expression>) -> Self {
+        WhileExpression { condition, body }
     }
 }
 
@@ -182,6 +194,20 @@ impl Expression for IfExpression {
         } else {
             Ok(Value::Primitive(Primitive::Nil))
         }
+    }
+}
+
+impl Expression for WhileExpression {
+    fn to_string(&self) -> String {
+        format!("(while ({}) {})", self.condition.to_string(), self.body.to_string())
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let mut value = Value::Primitive(Primitive::Nil);
+        while self.condition.evaluate(scope)?.is_true() {
+            value = self.body.evaluate(scope)?;
+        };
+        Ok(value)
     }
 }
 

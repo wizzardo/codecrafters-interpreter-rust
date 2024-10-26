@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -58,6 +58,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_group(iterator)
         } else if lexeme.token == Token::IF {
             parse_if(iterator)
+        } else if lexeme.token == Token::WHILE {
+            parse_while(iterator)
         } else if lexeme.token == Token::LEFT_BRACE {
             parse_block(iterator)
         } else if lexeme.token == Token::BANG {
@@ -267,6 +269,42 @@ fn parse_if(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         }
     };
     Box::new(IfExpression::new(condition, body, else_body))
+}
+
+fn parse_while(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    iterator.advance();
+    if let Some(l) = iterator.peek() {
+        if l.token != Token::LEFT_PAREN {
+            eprintln!("condition block expected");
+            std::process::exit(65);
+        }
+    }
+
+    iterator.advance();
+    if let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            eprintln!("empty while condition");
+            std::process::exit(65);
+        }
+    }
+
+    let condition = parse(iterator);
+    match iterator.peek() {
+        None => {
+            eprintln!("unclosed while condition");
+            std::process::exit(65);
+        }
+        Some(lexeme) => {
+            if lexeme.token != Token::RIGHT_PAREN {
+                eprintln!("{:?} != Token::RIGHT_PAREN", lexeme.token);
+                std::process::exit(65);
+            }
+        }
+    };
+    iterator.advance();
+
+    let body = parse(iterator);
+    Box::new(WhileExpression::new(condition, body))
 }
 
 fn parse_block(iterator: &mut LexemeIterator) -> Box<dyn Expression> {

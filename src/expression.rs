@@ -175,21 +175,12 @@ impl Expression for IfExpression {
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let check = self.condition.evaluate(scope)?;
-        match check {
-            Value::Primitive(p) => {
-                match p {
-                    Primitive::Boolean(b) => {
-                        if b {
-                            self.body.evaluate(scope)
-                        } else if let Some(e) = &self.else_body {
-                            e.evaluate(scope)
-                        } else {
-                            Ok(Value::Primitive(Primitive::Nil))
-                        }
-                    }
-                    it => { Err(format!("if condition evaluated to '{it:?}' that is not a boolean")) }
-                }
-            }
+        if check.is_true() {
+            self.body.evaluate(scope)
+        } else if let Some(e) = &self.else_body {
+            e.evaluate(scope)
+        } else {
+            Ok(Value::Primitive(Primitive::Nil))
         }
     }
 }
@@ -331,6 +322,7 @@ impl Expression for BinaryExpression {
             Token::EQUAL_EQUAL => { "==" }
             Token::BANG_EQUAL => { "!=" }
             Token::EQUAL => { "=" }
+            Token::OR => { "or" }
             t => { panic!("{:?} is not an action for binary expression", t) }
         };
         format!("({} {} {})", action, self.left.to_string(), self.right.to_string())
@@ -351,7 +343,16 @@ impl Expression for BinaryExpression {
             };
         }
         let left = self.left.evaluate(scope)?;
+        if self.lexeme.token == Token::OR {
+            if left.is_true() {
+                return Ok(left)
+            }
+        }
+
         let right = self.right.evaluate(scope)?;
+        if self.lexeme.token == Token::OR {
+            return Ok(right)
+        }
 
         match (left, right) {
             (Value::Primitive(l), Value::Primitive(r)) => {

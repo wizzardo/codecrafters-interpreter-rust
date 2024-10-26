@@ -328,6 +328,10 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 
 
     let before = if let Some(l) = iterator.peek() {
+        if l.token == Token::LEFT_BRACE {
+            eprintln!("BlockExpression cannot be used as init for FOR expression");
+            std::process::exit(65);
+        }
         if l.token == Token::SEMICOLON {
             iterator.advance();
             None
@@ -339,9 +343,20 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         std::process::exit(65);
     };
 
+    if let Some(l) = iterator.peek() {
+        if l.token == Token::LEFT_BRACE {
+            eprintln!("BlockExpression cannot be used as condition for FOR expression");
+            std::process::exit(65);
+        }
+    }
+
     let condition = parse(iterator);
 
     let after = if let Some(l) = iterator.peek() {
+        if l.token == Token::LEFT_BRACE {
+            eprintln!("BlockExpression cannot be used as after for FOR expression");
+            std::process::exit(65);
+        }
         if l.token == Token::RIGHT_PAREN {
             None
         } else {

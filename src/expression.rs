@@ -228,12 +228,12 @@ impl Expression for WhileExpression {
 impl Expression for ForExpression {
     fn to_string(&self) -> String {
         let before = match &self.before {
-            None => {"".to_string()}
-            Some(e) => {e.to_string()}
+            None => { "".to_string() }
+            Some(e) => { e.to_string() }
         };
         let after = match &self.after {
-            None => {"".to_string()}
-            Some(e) => {e.to_string()}
+            None => { "".to_string() }
+            Some(e) => { e.to_string() }
         };
         format!("(for ({before}; {}; {after}) {})", self.condition.to_string(), self.body.to_string())
     }
@@ -422,7 +422,7 @@ impl Expression for BinaryExpression {
             if left.is_true() {
                 let right = self.right.evaluate(scope)?;
                 if right.is_true() {
-                    return Ok(right)
+                    return Ok(right);
                 } else {
                     return Ok(Value::Primitive(Primitive::Boolean(false)));
                 }
@@ -434,13 +434,13 @@ impl Expression for BinaryExpression {
         let left = self.left.evaluate(scope)?;
         if self.lexeme.token == Token::OR {
             if left.is_true() {
-                return Ok(left)
+                return Ok(left);
             }
         }
 
         let right = self.right.evaluate(scope)?;
         if self.lexeme.token == Token::OR {
-            return Ok(right)
+            return Ok(right);
         }
 
         match (left, right) {

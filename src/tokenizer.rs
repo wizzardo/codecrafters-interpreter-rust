@@ -119,7 +119,7 @@ impl CharIterator {
 }
 
 #[allow(unused)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Lexeme {
     pub token: Token,
     pub src: Vec<char>,

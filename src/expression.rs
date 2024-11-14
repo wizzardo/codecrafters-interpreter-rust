@@ -149,6 +149,19 @@ impl VariableExpression {
     }
 }
 
+
+#[allow(unused)]
+pub struct FunctionExpression {
+    lexeme: Lexeme,
+    name: String,
+}
+
+impl FunctionExpression {
+    pub fn new(lexeme: Lexeme, name: String) -> Self {
+        FunctionExpression { lexeme, name }
+    }
+}
+
 #[allow(unused)]
 pub struct BinaryExpression {
     lexeme: Lexeme,
@@ -315,6 +328,7 @@ impl Expression for UnaryNotExpression {
                     }
                 }
             }
+            Value::Function(e) => { Err(format!("Cannot apply unary not to a function {}", e.to_string())) }
         }
     }
 }
@@ -336,6 +350,7 @@ impl Expression for UnaryMinusExpression {
                     p => { Err(format!("Cannot apply unary minus to {}", p.to_string())) }
                 }
             }
+            Value::Function(e) => { Err(format!("Cannot apply unary minus to a function {}", e.to_string())) }
         }
     }
 }
@@ -357,6 +372,7 @@ impl Expression for PrintExpression {
                     Primitive::Nil => { println!("nil"); }
                 }
             }
+            Value::Function(e) => { println!("{}", e.to_string()) }
         }
         Ok(Value::Primitive(Primitive::Nil))
     }
@@ -388,6 +404,33 @@ impl Expression for VariableExpression {
                 Ok(v.clone())
             }
         }
+    }
+
+    fn to_variable(&self) -> Option<String> {
+        Some(self.name.clone())
+    }
+}
+
+impl Expression for FunctionExpression {
+    fn to_string(&self) -> String {
+        format!("{}()", self.name)
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let fun = match scope.get(&self.name) {
+            None => {
+                Err(format!("Function {} not found", self.name))
+            }
+            Some(v) => {
+                match v {
+                    Value::Function(e) => { Ok(e.clone()) }
+                    _ => {
+                        Err(format!("variable {} is not a function", self.name))
+                    }
+                }
+            }
+        }?;
+        fun.evaluate(scope)
     }
 
     fn to_variable(&self) -> Option<String> {
@@ -499,6 +542,31 @@ impl Expression for BinaryExpression {
                     }
                 }
             }
+            (a, b) => {
+                Err(format!("Cannot apply {:?} expression to {} and {}", self.lexeme.token, a.to_string(), b.to_string()))
+            }
         }
+    }
+}
+
+
+#[allow(unused)]
+pub struct NativeFunctionExpression {
+    name: String,
+    fun: Box<dyn Fn(&mut Scope) -> Result<Value, String>>,
+}
+
+impl NativeFunctionExpression {
+    pub fn new(name: String, fun: Box<dyn Fn(&mut Scope) -> Result<Value, String>>) -> Self {
+        NativeFunctionExpression { name, fun }
+    }
+}
+impl Expression for NativeFunctionExpression {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        (self.fun)(scope)
     }
 }

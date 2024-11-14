@@ -1,7 +1,8 @@
-use value::Value;
 use scope::Scope;
+use value::Value;
 use std::env;
-use primitive::Primitive;
+use std::time::SystemTime;
+use crate::expression::NativeFunctionExpression;
 
 mod tokenizer;
 mod parser;
@@ -52,16 +53,7 @@ fn main() {
             let result = expression.evaluate(&mut scope);
             match result {
                 Ok(value) => {
-                    match value {
-                        Value::Primitive(v) => {
-                            match v {
-                                Primitive::Number(v) => { println!("{}", v) }
-                                Primitive::String(v) => { println!("{}", v) }
-                                Primitive::Boolean(v) => { println!("{}", v) }
-                                Primitive::Nil => { println!("nil") }
-                            }
-                        }
-                    }
+                    println!("{}", value.to_string())
                 }
                 Err(_) => {
                     std::process::exit(70);
@@ -74,6 +66,13 @@ fn main() {
                 std::process::exit(65);
             }
             let mut scope = Scope::new();
+
+            let clock: Box<dyn Fn(&mut Scope) -> Result<Value, String>> = Box::new(move |&mut _| {
+                let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+                Ok(Value::from_number(now as f64))
+            });
+            scope.define("clock".to_string(), Value::from_expression(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
+
             let statements = parser::parse_statements(lexemes);
             let mut _result;
             for x in statements {
@@ -99,6 +98,8 @@ mod tests {
     use super::*;
     use crate::parser::{parse_lexemes, parse_statements};
     use crate::tokenizer::{get_tokens_map, tokenize, Token};
+    use value::Value;
+    use crate::expression::NativeFunctionExpression;
 
     #[test]
     fn test() {
@@ -169,6 +170,7 @@ mod tests {
             Value::Primitive(v) => {
                 assert_eq!("false", v.to_string())
             }
+            _ => { assert!(false) }
         }
     }
 
@@ -181,8 +183,9 @@ mod tests {
         let result = expression.evaluate(&mut scope).unwrap();
         match result {
             Value::Primitive(v) => {
-                assert_eq!("144.0", v.to_string())
+                assert_eq!("144", v.to_string())
             }
+            _ => { assert!(false) }
         }
     }
 
@@ -193,7 +196,7 @@ mod tests {
         let expression = parse_lexemes(lexemes);
         let mut scope = Scope::new();
         let _ = expression.evaluate(&mut scope).unwrap();
-        assert_eq!("1.0", scope.get(&"foo".to_string()).expect("expect variable to be there").to_string());
+        assert_eq!("1", scope.get(&"foo".to_string()).expect("expect variable to be there").to_string());
     }
 
     #[test]
@@ -229,7 +232,7 @@ mod tests {
         for exp in expressions {
             exp.evaluate(&mut scope).unwrap();
         }
-        assert_eq!("2.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+        assert_eq!("2", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
     }
 
     #[test]
@@ -245,7 +248,7 @@ mod tests {
         for exp in expressions {
             exp.evaluate(&mut scope).unwrap();
         }
-        assert_eq!("2.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+        assert_eq!("2", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
     }
 
     #[test]
@@ -263,7 +266,7 @@ mod tests {
         for exp in expressions {
             exp.evaluate(&mut scope).unwrap();
         }
-        assert_eq!("3.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+        assert_eq!("3", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
     }
 
     #[test]
@@ -281,7 +284,7 @@ mod tests {
         for exp in expressions {
             exp.evaluate(&mut scope).unwrap();
         }
-        assert_eq!("3.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+        assert_eq!("3", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
     }
 
     #[test]
@@ -299,7 +302,7 @@ mod tests {
         for exp in expressions {
             exp.evaluate(&mut scope).unwrap();
         }
-        assert_eq!("2.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+        assert_eq!("2", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
     }
 
     #[test]
@@ -318,6 +321,35 @@ mod tests {
         for exp in expressions {
             exp.evaluate(&mut scope).unwrap();
         }
-        assert_eq!("3.0", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+        assert_eq!("3", scope.get(&"a".to_string()).expect("expect variable to be there").to_string());
+    }
+
+    #[test]
+    fn test_call_function_1() {
+        let (lexemes, _) = tokenize(r##"
+            print clock();
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        assert_eq!(1, expressions.len());
+        assert_eq!("print clock()", expressions[0].to_string());
+        let mut scope = Scope::new();
+
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as f64;
+
+        let clock: Box<dyn Fn(&mut Scope) -> Result<Value, String>> = Box::new(move |&mut _| {
+            Ok(Value::from_number(now))
+        });
+        scope.define("clock".to_string(), Value::from_expression(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
+
+        let fun = scope.get(&"clock".to_string()).expect("expect variable to be there");
+        let fun = match fun {
+            Value::Function(fun) => {
+                fun.clone()
+            }
+            _ => { panic!() }
+        };
+
+        assert_eq!(format!("{now}"), fun.evaluate(&mut scope).unwrap().to_string());
     }
 }

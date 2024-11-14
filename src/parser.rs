@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -21,6 +21,13 @@ impl LexemeIterator {
             None
         } else {
             Some(&self.lexemes[self.position])
+        }
+    }
+    fn peek_n(&self, n: usize) -> Option<&Lexeme> {
+        if self.position + n >= self.limit {
+            None
+        } else {
+            Some(&self.lexemes[self.position + n])
         }
     }
     fn advance(&mut self) {
@@ -73,7 +80,15 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         } else if lexeme.token == Token::VAR {
             parse_var(iterator)
         } else if lexeme.token == Token::IDENTIFIER {
-            parse_identifier(iterator)
+            if let Some(next) = iterator.peek_n(1) {
+                if next.token == Token::LEFT_PAREN {
+                    parse_function_call(iterator)
+                } else {
+                    parse_identifier(iterator)
+                }
+            } else {
+                parse_identifier(iterator)
+            }
         } else if lexeme.token == Token::SEMICOLON {
             iterator.advance();
             if operands.is_empty() {
@@ -460,6 +475,31 @@ fn parse_identifier(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     iterator.advance();
     let name = lexeme.src.iter().collect();
     Box::new(VariableExpression::new(lexeme.clone(), name))
+}
+
+fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    iterator.advance();
+    let name = lexeme.src.iter().collect();
+    if let Some(l) = iterator.peek() {
+        if l.token == Token::LEFT_PAREN {
+            if let Some(r) = iterator.peek_n(1) {
+                if r.token != Token::RIGHT_PAREN {
+                    panic!("FunctionCall expected '(' and '')");
+                }
+            } else {
+                panic!("FunctionCall expected '(' and '')");
+            }
+        } else {
+            panic!("FunctionCall expected '(' and '')");
+        }
+    } else {
+        panic!("FunctionCall expected '(' and '')");
+    }
+    
+    iterator.advance();
+    iterator.advance();
+    Box::new(FunctionExpression::new(lexeme.clone(), name))
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {

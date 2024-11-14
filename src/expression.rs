@@ -176,7 +176,21 @@ impl Expression for NoopExpression {
 
 impl Expression for LiteralExpression {
     fn to_string(&self) -> String {
-        self.literal.to_string()
+        match &self.literal {
+            Primitive::Number(i) => {
+                let number_str = i.to_string();
+                if number_str.contains('.') {
+                    number_str
+                } else {
+                    let mut x: Vec<char> = number_str.chars().collect();
+                    x.push('.');
+                    x.push('0');
+                    x.iter().collect()
+                }
+            }
+            p => p.to_string()
+        }
+        // self.literal.to_string()
     }
 
     fn evaluate(&self, _scope: &mut Scope) -> Result<Value, String> {

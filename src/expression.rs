@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::value::Value;
 use crate::primitive::Primitive;
 use crate::scope::Scope;
@@ -151,14 +152,42 @@ impl VariableExpression {
 
 
 #[allow(unused)]
-pub struct FunctionExpression {
+pub struct FunctionCallExpression {
     lexeme: Lexeme,
     name: String,
 }
 
-impl FunctionExpression {
+impl FunctionCallExpression {
     pub fn new(lexeme: Lexeme, name: String) -> Self {
-        FunctionExpression { lexeme, name }
+        FunctionCallExpression { lexeme, name }
+    }
+}
+
+#[allow(unused)]
+pub struct FunctionExpression {
+    lexeme: Lexeme,
+    name: String,
+    args: Vec<String>,
+    body: Arc<Box<dyn Expression>>,
+}
+
+impl FunctionExpression {
+    pub fn new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
+        FunctionExpression { lexeme, name, args, body: Arc::new(body) }
+    }
+}
+
+#[allow(unused)]
+pub struct FunctionDefinitionExpression {
+    lexeme: Lexeme,
+    name: String,
+    args: Vec<String>,
+    body: Arc<Box<dyn Expression>>,
+}
+
+impl FunctionDefinitionExpression {
+    pub fn new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
+        FunctionDefinitionExpression { lexeme, name, args, body: Arc::new(body) }
     }
 }
 
@@ -411,7 +440,7 @@ impl Expression for VariableExpression {
     }
 }
 
-impl Expression for FunctionExpression {
+impl Expression for FunctionCallExpression {
     fn to_string(&self) -> String {
         format!("{}()", self.name)
     }
@@ -432,9 +461,32 @@ impl Expression for FunctionExpression {
         }?;
         fun.evaluate(scope)
     }
+}
 
-    fn to_variable(&self) -> Option<String> {
-        Some(self.name.clone())
+impl Expression for FunctionDefinitionExpression {
+    fn to_string(&self) -> String {
+        format!("fun {}()", self.name)
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let fun: Arc<Box<dyn Expression>> = Arc::new(Box::new(FunctionExpression {
+            lexeme: self.lexeme.clone(),
+            name: self.name.clone(),
+            args: self.args.clone(),
+            body: self.body.clone(),
+        }));
+        scope.define(self.name.clone(), Value::Function(fun.clone()));
+        Ok(Value::Function(fun.clone()))
+    }
+}
+
+impl Expression for FunctionExpression {
+    fn to_string(&self) -> String {
+        format!("<fn {}>", self.name)
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        self.body.evaluate(scope)
     }
 }
 

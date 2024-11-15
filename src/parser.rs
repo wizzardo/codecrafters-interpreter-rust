@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -79,6 +79,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_print(iterator)
         } else if lexeme.token == Token::VAR {
             parse_var(iterator)
+        } else if lexeme.token == Token::FUN {
+            parse_function(iterator)
         } else if lexeme.token == Token::IDENTIFIER {
             if let Some(next) = iterator.peek_n(1) {
                 if next.token == Token::LEFT_PAREN {
@@ -470,6 +472,47 @@ fn parse_var(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     }
 }
 
+fn parse_function(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    iterator.advance();
+    let name = iterator.peek().expect("expected a function name");
+    let name = name.src.iter().collect();
+    iterator.advance();
+    if let Some(l) = iterator.peek() {
+        if l.token != Token::LEFT_PAREN {
+            eprintln!("expected ( after function name");
+            std::process::exit(65);
+        }
+    } else {
+        eprintln!("expected ( after function name");
+        std::process::exit(65);
+    }
+    iterator.advance();
+    //todo parse args
+    if let Some(l) = iterator.peek() {
+        if l.token != Token::RIGHT_PAREN {
+            eprintln!("expected ) after function name");
+            std::process::exit(65);
+        }
+    } else {
+        eprintln!("expected ) after function name");
+        std::process::exit(65);
+    }
+    iterator.advance();
+    
+    if let Some(l) = iterator.peek() {
+        if l.token != Token::LEFT_BRACE {
+            eprintln!("expected {{ after function arguments");
+            std::process::exit(65);
+        }
+    } else {
+        eprintln!("expected {{ after function arguments");
+        std::process::exit(65);
+    }
+    let body = parse_block(iterator);
+    Box::new(FunctionDefinitionExpression::new(lexeme, name, vec![], body))
+}
+
 fn parse_identifier(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
@@ -499,7 +542,7 @@ fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     
     iterator.advance();
     iterator.advance();
-    Box::new(FunctionExpression::new(lexeme.clone(), name))
+    Box::new(FunctionCallExpression::new(lexeme.clone(), name))
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {

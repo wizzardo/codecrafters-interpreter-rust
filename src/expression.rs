@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::value::Value;
+use crate::value::{ReturnValue, Value};
 use crate::primitive::Primitive;
 use crate::scope::Scope;
 use crate::tokenizer::{Lexeme, Token};
@@ -282,6 +282,10 @@ impl Expression for WhileExpression {
         let mut value = Value::Primitive(Primitive::Nil);
         while self.condition.evaluate(scope)?.is_true() {
             value = self.body.evaluate(scope)?;
+            if let Value::Return(v) = value {
+                value = v.to_value();
+                break
+            }
         };
         Ok(value)
     }
@@ -310,6 +314,10 @@ impl Expression for ForExpression {
         scope.push_scope();
         while self.condition.evaluate(scope)?.is_true() {
             value = self.body.evaluate(scope)?;
+            if let Value::Return(v) = value {
+                value = v.to_value();
+                break
+            }
             if let Some(e) = &self.after {
                 e.evaluate(scope)?;
             }
@@ -332,9 +340,12 @@ impl Expression for BlockExpression {
         scope.push_scope();
         for x in &self.expressions {
             value = x.evaluate(scope)?;
+            if let Value::Return(_) = &value {
+                break
+            }
         }
         scope.pop_scope();
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -364,6 +375,7 @@ impl Expression for UnaryNotExpression {
                 }
             }
             Value::Function(e) => { Err(format!("Cannot apply unary not to a function {}", e.to_string())) }
+            Value::Return(e) => { Err(format!("Cannot apply unary not to a return {}", e.to_string())) }
         }
     }
 }
@@ -386,6 +398,7 @@ impl Expression for UnaryMinusExpression {
                 }
             }
             Value::Function(e) => { Err(format!("Cannot apply unary minus to a function {}", e.to_string())) }
+            Value::Return(e) => { Err(format!("Cannot apply unary minus to a return {}", e.to_string())) }
         }
     }
 }
@@ -408,6 +421,7 @@ impl Expression for PrintExpression {
                 }
             }
             Value::Function(e) => { println!("{}", e.to_string()) }
+            Value::Return(it) => { println!("return {}", it.to_string()) }
         }
         Ok(Value::Primitive(Primitive::Nil))
     }
@@ -499,16 +513,25 @@ impl Function for FunctionExpression {
         if args.len() != self.args.len() {
             return Err(format!("Function {} takes {} arguments, but got {}", self.name, self.args.len(), args.len()));
         }
-        
+
         scope.push_scope();
 
         for i in (0..self.args.len()).rev() {
-            scope.define(self.args[i].clone(), args.remove(i)); 
+            scope.define(self.args[i].clone(), args.remove(i));
         }
-        
+
         let result = self.body.evaluate(scope);
         scope.pop_scope();
-        result
+        match result {
+            Ok(it) => {
+                if let Value::Return(v) = it {
+                    Ok(v.to_value())
+                } else {
+                    Ok(it)
+                }
+            }
+            Err(e) => { Err(e) }
+        }
     }
 }
 
@@ -642,5 +665,30 @@ impl Function for NativeFunctionExpression {
 
     fn evaluate(&self, scope: &mut Scope, args: Vec<Value>) -> Result<Value, String> {
         (self.fun)(scope, args)
+    }
+}
+
+
+
+#[allow(unused)]
+pub struct ReturnExpression {
+    lexeme: Lexeme,
+    expression: Box<dyn Expression>,
+}
+
+impl ReturnExpression {
+    pub fn new(lexeme: Lexeme, expression: Box<dyn Expression>) -> Self {
+        ReturnExpression { lexeme, expression }
+    }
+}
+
+impl Expression for ReturnExpression {
+    fn to_string(&self) -> String {
+        format!("return {}", self.expression.to_string())
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let value = self.expression.evaluate(scope)?;
+        Ok(Value::Return(ReturnValue::from_value(value)))
     }
 }

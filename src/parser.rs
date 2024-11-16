@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression, ReturnExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -80,6 +80,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_unary_minus(iterator)
         } else if lexeme.token == Token::PRINT {
             parse_print(iterator)
+        } else if lexeme.token == Token::RETURN {
+            parse_return(iterator)
         } else if lexeme.token == Token::VAR {
             parse_var(iterator)
         } else if lexeme.token == Token::FUN {
@@ -452,6 +454,20 @@ fn parse_print(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
     Box::new(PrintExpression::new(lexeme, parse(iterator)))
+}
+
+fn parse_return(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    iterator.advance();
+
+    if let Some(l) = iterator.peek() {
+        if l.token == Token::SEMICOLON {
+            let end = l.clone();
+            iterator.advance();
+            return Box::new(ReturnExpression::new(lexeme, Box::new(LiteralExpression::new(end, Primitive::Nil))))
+        }
+    }
+    Box::new(ReturnExpression::new(lexeme, parse(iterator)))
 }
 
 fn parse_var(iterator: &mut LexemeIterator) -> Box<dyn Expression> {

@@ -7,6 +7,7 @@ use std::sync::Arc;
 pub enum Value {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
+    Return(ReturnValue),
 }
 
 #[allow(unused)]
@@ -15,6 +16,7 @@ impl Value {
         match self {
             Value::Primitive(p) => p.to_string(),
             Value::Function(e) => e.to_string(),
+            Value::Return(it) => it.to_string(),
         }
     }
     pub fn is_true(&self) -> bool {
@@ -26,6 +28,7 @@ impl Value {
                 Primitive::Nil => false,
             },
             Value::Function(_) => true,
+            Value::Return(_) => false,
         }
     }
 
@@ -40,5 +43,35 @@ impl Value {
 impl Debug for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_string())
+    }
+}
+
+
+#[derive(Clone)]
+pub enum ReturnValue {
+    Primitive(Primitive),
+    Function(Arc<Box<dyn Function>>),
+}
+
+impl ReturnValue {
+    pub fn to_value(self) -> Value {
+        match self {
+            ReturnValue::Primitive(it) => { Value::Primitive(it) }
+            ReturnValue::Function(it) => { Value::Function(it) }
+        }
+    }
+    pub fn to_string(&self) -> String {
+        match self {
+            ReturnValue::Primitive(p) => p.to_string(),
+            ReturnValue::Function(e) => e.to_string(),
+        }
+    }
+
+    pub fn from_value(v: Value) -> ReturnValue {
+        match v {
+            Value::Primitive(it) => { ReturnValue::Primitive(it) }
+            Value::Function(it) => { ReturnValue::Function(it) }
+            Value::Return(it) => { it }
+        }
     }
 }

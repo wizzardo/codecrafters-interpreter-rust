@@ -12,6 +12,11 @@ pub trait Expression {
     }
 }
 
+pub trait Function {
+    fn to_string(&self) -> String;
+    fn evaluate(&self, scope: &mut Scope, args: Vec<Value>) -> Result<Value, String>;
+}
+
 #[allow(unused)]
 pub struct LiteralExpression {
     lexeme: Lexeme,
@@ -155,11 +160,12 @@ impl VariableExpression {
 pub struct FunctionCallExpression {
     lexeme: Lexeme,
     name: String,
+    args: Vec<Box<dyn Expression>>
 }
 
 impl FunctionCallExpression {
-    pub fn new(lexeme: Lexeme, name: String) -> Self {
-        FunctionCallExpression { lexeme, name }
+    pub fn new(lexeme: Lexeme, name: String, args: Vec<Box<dyn Expression>>) -> Self {
+        FunctionCallExpression { lexeme, name, args }
     }
 }
 
@@ -172,7 +178,7 @@ pub struct FunctionExpression {
 }
 
 impl FunctionExpression {
-    pub fn new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
+    pub fn _new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
         FunctionExpression { lexeme, name, args, body: Arc::new(body) }
     }
 }
@@ -459,7 +465,11 @@ impl Expression for FunctionCallExpression {
                 }
             }
         }?;
-        fun.evaluate(scope)
+        let mut args = Vec::with_capacity(self.args.len());
+        for a in &self.args {
+            args.push(a.evaluate(scope)?);
+        }
+        fun.evaluate(scope, args)
     }
 }
 
@@ -469,7 +479,7 @@ impl Expression for FunctionDefinitionExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        let fun: Arc<Box<dyn Expression>> = Arc::new(Box::new(FunctionExpression {
+        let fun: Arc<Box<dyn Function>> = Arc::new(Box::new(FunctionExpression {
             lexeme: self.lexeme.clone(),
             name: self.name.clone(),
             args: self.args.clone(),
@@ -480,13 +490,25 @@ impl Expression for FunctionDefinitionExpression {
     }
 }
 
-impl Expression for FunctionExpression {
+impl Function for FunctionExpression {
     fn to_string(&self) -> String {
         format!("<fn {}>", self.name)
     }
 
-    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        self.body.evaluate(scope)
+    fn evaluate(&self, scope: &mut Scope, mut args: Vec<Value>) -> Result<Value, String> {
+        if args.len() != self.args.len() {
+            return Err(format!("Function {} takes {} arguments, but got {}", self.name, self.args.len(), args.len()));
+        }
+        
+        scope.push_scope();
+
+        for i in (0..self.args.len()).rev() {
+            scope.define(self.args[i].clone(), args.remove(i)); 
+        }
+        
+        let result = self.body.evaluate(scope);
+        scope.pop_scope();
+        result
     }
 }
 
@@ -605,20 +627,20 @@ impl Expression for BinaryExpression {
 #[allow(unused)]
 pub struct NativeFunctionExpression {
     name: String,
-    fun: Box<dyn Fn(&mut Scope) -> Result<Value, String>>,
+    fun: Box<dyn Fn(&mut Scope, Vec<Value>) -> Result<Value, String>>,
 }
 
 impl NativeFunctionExpression {
-    pub fn new(name: String, fun: Box<dyn Fn(&mut Scope) -> Result<Value, String>>) -> Self {
+    pub fn new(name: String, fun: Box<dyn Fn(&mut Scope, Vec<Value>) -> Result<Value, String>>) -> Self {
         NativeFunctionExpression { name, fun }
     }
 }
-impl Expression for NativeFunctionExpression {
+impl Function for NativeFunctionExpression {
     fn to_string(&self) -> String {
         self.name.clone()
     }
 
-    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        (self.fun)(scope)
+    fn evaluate(&self, scope: &mut Scope, args: Vec<Value>) -> Result<Value, String> {
+        (self.fun)(scope, args)
     }
 }

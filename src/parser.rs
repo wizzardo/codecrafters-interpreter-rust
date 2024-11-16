@@ -23,6 +23,9 @@ impl LexemeIterator {
             Some(&self.lexemes[self.position])
         }
     }
+    fn is(&self, token: Token) -> bool {
+        self.position < self.limit && self.lexemes[self.position].token == token
+    }
     fn peek_n(&self, n: usize) -> Option<&Lexeme> {
         if self.position + n >= self.limit {
             None
@@ -478,39 +481,43 @@ fn parse_function(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let name = iterator.peek().expect("expected a function name");
     let name = name.src.iter().collect();
     iterator.advance();
-    if let Some(l) = iterator.peek() {
-        if l.token != Token::LEFT_PAREN {
-            eprintln!("expected ( after function name");
-            std::process::exit(65);
-        }
-    } else {
+    
+    if !iterator.is(Token::LEFT_PAREN){
         eprintln!("expected ( after function name");
         std::process::exit(65);
     }
     iterator.advance();
-    //todo parse args
-    if let Some(l) = iterator.peek() {
-        if l.token != Token::RIGHT_PAREN {
-            eprintln!("expected ) after function name");
+    
+    let mut args = vec![];
+    while let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            break;
+        }
+
+        let var = l.src.iter().collect();
+        args.push(var);
+        iterator.advance();
+
+        if iterator.is(Token::COMMA) {
+            iterator.advance();
+        } else if !iterator.is(Token::RIGHT_PAREN) {
+            eprintln!("expected ',' or ')' after argument name");
             std::process::exit(65);
         }
-    } else {
+    }
+
+    if !iterator.is(Token::RIGHT_PAREN){
         eprintln!("expected ) after function name");
         std::process::exit(65);
     }
     iterator.advance();
     
-    if let Some(l) = iterator.peek() {
-        if l.token != Token::LEFT_BRACE {
-            eprintln!("expected {{ after function arguments");
-            std::process::exit(65);
-        }
-    } else {
+    if !iterator.is(Token::LEFT_BRACE){
         eprintln!("expected {{ after function arguments");
         std::process::exit(65);
     }
     let body = parse_block(iterator);
-    Box::new(FunctionDefinitionExpression::new(lexeme, name, vec![], body))
+    Box::new(FunctionDefinitionExpression::new(lexeme, name, args, body))
 }
 
 fn parse_identifier(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
@@ -522,27 +529,39 @@ fn parse_identifier(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 
 fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
-    iterator.advance();
     let name = lexeme.src.iter().collect();
-    if let Some(l) = iterator.peek() {
-        if l.token == Token::LEFT_PAREN {
-            if let Some(r) = iterator.peek_n(1) {
-                if r.token != Token::RIGHT_PAREN {
-                    panic!("FunctionCall expected '(' and '')");
-                }
-            } else {
-                panic!("FunctionCall expected '(' and '')");
-            }
-        } else {
-            panic!("FunctionCall expected '(' and '')");
-        }
-    } else {
-        panic!("FunctionCall expected '(' and '')");
+    iterator.advance();
+
+    if !iterator.is(Token::LEFT_PAREN){
+        eprintln!("expected ( after function name");
+        std::process::exit(65);
     }
+    iterator.advance();
+
+    let mut args = vec![];
+    while let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            break;
+        }
+
+        let var = parse(iterator);
+        args.push(var);
+        
+        if iterator.is(Token::COMMA) {
+            iterator.advance();
+        } else if !iterator.is(Token::RIGHT_PAREN) {
+            eprintln!("expected ',' or ')' after argument name, but was {:?}", iterator.peek().map(|t| t.token));
+            std::process::exit(65);
+        }
+    }
+
+    if !iterator.is(Token::RIGHT_PAREN){
+        eprintln!("expected ) after function name");
+        std::process::exit(65);
+    }
+    iterator.advance();
     
-    iterator.advance();
-    iterator.advance();
-    Box::new(FunctionCallExpression::new(lexeme.clone(), name))
+    Box::new(FunctionCallExpression::new(lexeme.clone(), name, args))
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {

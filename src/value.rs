@@ -1,4 +1,4 @@
-use crate::expression::Expression;
+use crate::expression::{Function};
 use crate::primitive::Primitive;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub enum Value {
     Primitive(Primitive),
-    Function(Arc<Box<dyn Expression>>),
+    Function(Arc<Box<dyn Function>>),
 }
 
 #[allow(unused)]
@@ -29,7 +29,7 @@ impl Value {
         }
     }
 
-    pub fn from_expression(e: Box<dyn Expression>) -> Self {
+    pub fn from_function(e: Box<dyn Function>) -> Self {
         Value::Function(Arc::new(e))
     }
     pub fn from_number(it: f64) -> Self {

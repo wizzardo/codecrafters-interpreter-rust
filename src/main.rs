@@ -67,11 +67,11 @@ fn main() {
             }
             let mut scope = Scope::new();
 
-            let clock: Box<dyn Fn(&mut Scope) -> Result<Value, String>> = Box::new(move |&mut _| {
+            let clock: Box<dyn Fn(&mut Scope, Vec<Value>) -> Result<Value, String>> = Box::new(move |&mut _, _| {
                 let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
                 Ok(Value::from_number(now as f64))
             });
-            scope.define("clock".to_string(), Value::from_expression(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
+            scope.define("clock".to_string(), Value::from_function(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
 
             let statements = parser::parse_statements(lexemes);
             let mut _result;
@@ -337,10 +337,10 @@ mod tests {
 
         let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as f64;
 
-        let clock: Box<dyn Fn(&mut Scope) -> Result<Value, String>> = Box::new(move |&mut _| {
+        let clock: Box<dyn Fn(&mut Scope, Vec<Value>) -> Result<Value, String>> = Box::new(move |&mut _, _| {
             Ok(Value::from_number(now))
         });
-        scope.define("clock".to_string(), Value::from_expression(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
+        scope.define("clock".to_string(), Value::from_function(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
 
         let fun = scope.get(&"clock".to_string()).expect("expect variable to be there");
         let fun = match fun {
@@ -350,6 +350,23 @@ mod tests {
             _ => { panic!() }
         };
 
-        assert_eq!(format!("{now}"), fun.evaluate(&mut scope).unwrap().to_string());
+        assert_eq!(format!("{now}"), fun.evaluate(&mut scope, vec![]).unwrap().to_string());
+    }
+
+    #[test]
+    fn test_custom_function_1() {
+        let (lexemes, _) = tokenize(r##"
+            fun f1(a) { a*2 }
+            f1(2);
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        let mut result = Value::from_number(0.0);
+        for exp in expressions {
+            result = exp.evaluate(&mut scope).unwrap();
+        }
+
+        assert_eq!(format!("4"), result.to_string());
     }
 }

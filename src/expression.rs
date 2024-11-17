@@ -14,7 +14,7 @@ pub trait Expression {
 
 pub trait Function {
     fn to_string(&self) -> String;
-    fn evaluate(&self, scope: &mut Scope, args: Vec<Value>) -> Result<Value, String>;
+    fn evaluate(&self, args: Vec<Value>) -> Result<Value, String>;
 }
 
 #[allow(unused)]
@@ -175,11 +175,12 @@ pub struct FunctionExpression {
     name: String,
     args: Vec<String>,
     body: Arc<Box<dyn Expression>>,
+    scope: Scope,
 }
 
 impl FunctionExpression {
-    pub fn _new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
-        FunctionExpression { lexeme, name, args, body: Arc::new(body) }
+    pub fn _new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>, scope: Scope) -> Self {
+        FunctionExpression { lexeme, name, args, body: Arc::new(body), scope }
     }
 }
 
@@ -450,7 +451,7 @@ impl Expression for VariableExpression {
                 Err(format!("Variable {} not found", self.name))
             }
             Some(v) => {
-                Ok(v.clone())
+                Ok(v.borrow().clone())
             }
         }
     }
@@ -471,8 +472,10 @@ impl Expression for FunctionCallExpression {
                 Err(format!("Function {} not found", self.name))
             }
             Some(v) => {
-                match v {
-                    Value::Function(e) => { Ok(e.clone()) }
+                match &(*v.borrow()) {
+                    Value::Function(e) => {
+                        Ok(e.clone())
+                    }
                     _ => {
                         Err(format!("variable {} is not a function", self.name))
                     }
@@ -483,7 +486,7 @@ impl Expression for FunctionCallExpression {
         for a in &self.args {
             args.push(a.evaluate(scope)?);
         }
-        fun.evaluate(scope, args)
+        fun.evaluate(args)
     }
 }
 
@@ -498,6 +501,7 @@ impl Expression for FunctionDefinitionExpression {
             name: self.name.clone(),
             args: self.args.clone(),
             body: self.body.clone(),
+            scope: scope.clone(),
         }));
         scope.define(self.name.clone(), Value::Function(fun.clone()));
         Ok(Value::Function(fun.clone()))
@@ -509,18 +513,19 @@ impl Function for FunctionExpression {
         format!("<fn {}>", self.name)
     }
 
-    fn evaluate(&self, scope: &mut Scope, mut args: Vec<Value>) -> Result<Value, String> {
+    fn evaluate(&self, mut args: Vec<Value>) -> Result<Value, String> {
         if args.len() != self.args.len() {
             return Err(format!("Function {} takes {} arguments, but got {}", self.name, self.args.len(), args.len()));
         }
 
+        let mut scope = self.scope.clone();
         scope.push_scope();
 
         for i in (0..self.args.len()).rev() {
             scope.define(self.args[i].clone(), args.remove(i));
         }
 
-        let result = self.body.evaluate(scope);
+        let result = self.body.evaluate(&mut scope);
         scope.pop_scope();
         match result {
             Ok(it) => {
@@ -650,11 +655,11 @@ impl Expression for BinaryExpression {
 #[allow(unused)]
 pub struct NativeFunctionExpression {
     name: String,
-    fun: Box<dyn Fn(&mut Scope, Vec<Value>) -> Result<Value, String>>,
+    fun: Box<dyn Fn(Vec<Value>) -> Result<Value, String>>,
 }
 
 impl NativeFunctionExpression {
-    pub fn new(name: String, fun: Box<dyn Fn(&mut Scope, Vec<Value>) -> Result<Value, String>>) -> Self {
+    pub fn new(name: String, fun: Box<dyn Fn(Vec<Value>) -> Result<Value, String>>) -> Self {
         NativeFunctionExpression { name, fun }
     }
 }
@@ -663,8 +668,8 @@ impl Function for NativeFunctionExpression {
         self.name.clone()
     }
 
-    fn evaluate(&self, scope: &mut Scope, args: Vec<Value>) -> Result<Value, String> {
-        (self.fun)(scope, args)
+    fn evaluate(&self, args: Vec<Value>) -> Result<Value, String> {
+        (self.fun)(args)
     }
 }
 
@@ -690,5 +695,41 @@ impl Expression for ReturnExpression {
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
         Ok(Value::Return(ReturnValue::from_value(value)))
+    }
+}
+
+
+#[allow(unused)]
+pub struct AnonymousFunctionCallExpression {
+    lexeme: Lexeme,
+    fun: Box<dyn Expression>,
+    args: Vec<Box<dyn Expression>>
+}
+
+impl AnonymousFunctionCallExpression {
+    pub fn new(lexeme: Lexeme, fun: Box<dyn Expression>, args: Vec<Box<dyn Expression>>) -> Self {
+        AnonymousFunctionCallExpression { lexeme, fun, args }
+    }
+}
+
+impl Expression for AnonymousFunctionCallExpression {
+    fn to_string(&self) -> String {
+        format!("{}()", self.fun.to_string())
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let fun = match self.fun.evaluate(scope)? {
+            Value::Function(e) => {
+                Ok(e.clone())
+            }
+            _ => {
+                Err(format!("expression {} is not a function", self.fun.to_string()))
+            }
+        }?;
+        let mut args = Vec::with_capacity(self.args.len());
+        for a in &self.args {
+            args.push(a.evaluate(scope)?);
+        }
+        fun.evaluate(args)
     }
 }

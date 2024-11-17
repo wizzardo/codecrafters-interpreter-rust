@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression, ReturnExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression, ReturnExpression, AnonymousFunctionCallExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -65,7 +65,11 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             iterator.advance();
             expression
         } else if lexeme.token == Token::LEFT_PAREN {
-            parse_group(iterator)
+            let mut e = parse_group(iterator);
+            while iterator.is(Token::LEFT_PAREN) {
+                e = parse_anonymous_function_call(iterator, e);
+            }
+            e
         } else if lexeme.token == Token::IF {
             parse_if(iterator)
         } else if lexeme.token == Token::WHILE {
@@ -89,7 +93,11 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         } else if lexeme.token == Token::IDENTIFIER {
             if let Some(next) = iterator.peek_n(1) {
                 if next.token == Token::LEFT_PAREN {
-                    parse_function_call(iterator)
+                    let mut e = parse_function_call(iterator);
+                    while iterator.is(Token::LEFT_PAREN) {
+                        e = parse_anonymous_function_call(iterator, e);
+                    }
+                    e
                 } else {
                     parse_identifier(iterator)
                 }
@@ -578,6 +586,40 @@ fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     iterator.advance();
     
     Box::new(FunctionCallExpression::new(lexeme.clone(), name, args))
+}
+
+fn parse_anonymous_function_call(iterator: &mut LexemeIterator, fun: Box<dyn Expression>) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    if !iterator.is(Token::LEFT_PAREN){
+        eprintln!("expected ( after function name");
+        std::process::exit(65);
+    }
+    iterator.advance();
+
+    let mut args = vec![];
+    while let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            break;
+        }
+
+        let var = parse(iterator);
+        args.push(var);
+        
+        if iterator.is(Token::COMMA) {
+            iterator.advance();
+        } else if !iterator.is(Token::RIGHT_PAREN) {
+            eprintln!("expected ',' or ')' after argument name, but was {:?}", iterator.peek().map(|t| t.token));
+            std::process::exit(65);
+        }
+    }
+
+    if !iterator.is(Token::RIGHT_PAREN){
+        eprintln!("expected ) after function name");
+        std::process::exit(65);
+    }
+    iterator.advance();
+    
+    Box::new(AnonymousFunctionCallExpression::new(lexeme.clone(), fun, args))
 }
 
 fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {

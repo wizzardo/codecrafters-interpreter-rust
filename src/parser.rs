@@ -63,6 +63,10 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         let expression = if lexeme.token.is_literal() {
             let expression = to_literal_expression(lexeme);
             iterator.advance();
+            if iterator.is(Token::LEFT_PAREN) {
+                eprintln!("Can only call functions and classes.");
+                std::process::exit(70);
+            }
             expression
         } else if lexeme.token == Token::LEFT_PAREN {
             let mut e = parse_group(iterator);
@@ -570,7 +574,7 @@ fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 
         let var = parse(iterator);
         args.push(var);
-        
+
         if iterator.is(Token::COMMA) {
             iterator.advance();
         } else if !iterator.is(Token::RIGHT_PAREN) {
@@ -584,7 +588,7 @@ fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         std::process::exit(65);
     }
     iterator.advance();
-    
+
     Box::new(FunctionCallExpression::new(lexeme.clone(), name, args))
 }
 
@@ -604,7 +608,7 @@ fn parse_anonymous_function_call(iterator: &mut LexemeIterator, fun: Box<dyn Exp
 
         let var = parse(iterator);
         args.push(var);
-        
+
         if iterator.is(Token::COMMA) {
             iterator.advance();
         } else if !iterator.is(Token::RIGHT_PAREN) {
@@ -618,7 +622,7 @@ fn parse_anonymous_function_call(iterator: &mut LexemeIterator, fun: Box<dyn Exp
         std::process::exit(65);
     }
     iterator.advance();
-    
+
     Box::new(AnonymousFunctionCallExpression::new(lexeme.clone(), fun, args))
 }
 

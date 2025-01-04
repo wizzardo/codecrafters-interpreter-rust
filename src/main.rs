@@ -325,6 +325,23 @@ mod tests {
     }
 
     #[test]
+    fn test_run_for_4() {
+        let (lexemes, _) = tokenize(r##"
+            var sum = 0;
+            for (var i = 0; i < 10; i = i + 1;) {
+                sum = sum + 1;
+            }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("10", scope.get(&"sum".to_string()).expect("expect variable to be there").borrow().to_string());
+    }
+
+    #[test]
     fn test_call_function_1() {
         let (lexemes, _) = tokenize(r##"
             print clock();

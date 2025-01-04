@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::rc::Rc;
 use crate::value::Value;
 
@@ -111,5 +110,8 @@ impl Scope {
             }
         }
         None
+    }
+    pub fn equals(&self, other: &Scope) -> bool {
+        Rc::ptr_eq(&self.current, &other.current)
     }
 }

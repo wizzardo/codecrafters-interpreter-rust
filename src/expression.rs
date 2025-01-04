@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 use crate::value::{ReturnValue, Value};
 use crate::primitive::Primitive;
@@ -7,8 +9,11 @@ use crate::tokenizer::{Lexeme, Token};
 pub trait Expression {
     fn to_string(&self) -> String;
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String>;
-    fn to_variable(&self) -> Option<&String> {
+    fn to_variable(&self) -> Option<&VariableExpression> {
         None
+    }
+    fn needs_subscope(&self) -> bool {
+        false
     }
 }
 
@@ -86,11 +91,13 @@ pub struct BlockExpression {
     start: Lexeme,
     end: Lexeme,
     expressions: Vec<Box<dyn Expression>>,
+    scoped: bool
 }
 
 impl BlockExpression {
     pub fn new(start: Lexeme, end: Lexeme, expressions: Vec<Box<dyn Expression>>) -> Self {
-        BlockExpression { start, end, expressions }
+        let scoped = expressions.iter().any(|x| x.needs_subscope());
+        BlockExpression { start, end, expressions, scoped }
     }
 }
 
@@ -147,11 +154,12 @@ impl VariableDeclarationExpression {
 pub struct VariableExpression {
     lexeme: Lexeme,
     name: String,
+    binded: RefCell<Option<(Scope, Rc<RefCell<Value>>)>>
 }
 
 impl VariableExpression {
     pub fn new(lexeme: Lexeme, name: String) -> Self {
-        VariableExpression { lexeme, name }
+        VariableExpression { lexeme, name, binded: RefCell::new(None) }
     }
 }
 
@@ -336,14 +344,18 @@ impl Expression for BlockExpression {
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let mut value = Value::Primitive(Primitive::Nil);
 
-        scope.push_scope();
+        if self.scoped {
+            scope.push_scope();
+        }
         for x in &self.expressions {
             value = x.evaluate(scope)?;
             if let Value::Return(_) = &value {
                 break
             }
         }
-        scope.pop_scope();
+        if self.scoped {
+            scope.pop_scope();
+        }
         Ok(value)
     }
 }
@@ -436,6 +448,10 @@ impl Expression for VariableDeclarationExpression {
         scope.define(self.name.clone(), value);
         Ok(Value::Primitive(Primitive::Nil))
     }
+
+    fn needs_subscope(&self) -> bool {
+        true
+    }
 }
 
 impl Expression for VariableExpression {
@@ -444,18 +460,53 @@ impl Expression for VariableExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        match scope.get(&self.name) {
+        match self.get(scope) {
             None => {
                 Err(format!("Variable {} not found", self.name))
             }
             Some(v) => {
-                Ok(v.borrow().clone())
+                Ok(v)
             }
         }
     }
 
-    fn to_variable(&self) -> Option<&String> {
-        Some(&self.name)
+    fn to_variable(&self) -> Option<&Self> {
+        Some(self)
+    }
+}
+
+impl VariableExpression {
+    fn set(&self, scope: &mut Scope, value: Value) {
+        if let Some((binded_scope, value_holder)) = self.binded.borrow().as_ref() {
+            if binded_scope.equals(scope) {
+                value_holder.replace(value.clone());
+                return;
+            }
+        }
+
+        if let Some(v) = scope.get(&self.name) {
+            self.binded.replace(Some((scope.clone(), v.clone())));
+        }
+
+        scope.set(&self.name, value.clone());
+    }
+
+    fn get(&self, scope: &Scope) -> Option<Value> {
+        if let Some((binded_scope, value_holder)) = self.binded.borrow().as_ref() {
+            if binded_scope.equals(scope) {
+                return Some(value_holder.borrow().clone());
+            }
+        }
+
+        match scope.get(&self.name) {
+            None => {
+                None
+            }
+            Some(v) => {
+                self.binded.replace(Some((scope.clone(), v.clone())));
+                Some(v.borrow().clone())
+            }
+        }
     }
 }
 
@@ -503,6 +554,10 @@ impl Expression for FunctionDefinitionExpression {
         }));
         scope.define(self.name.clone(), Value::Function(fun.clone()));
         Ok(Value::Function(fun.clone()))
+    }
+
+    fn needs_subscope(&self) -> bool {
+        true
     }
 }
 
@@ -564,7 +619,7 @@ impl Expression for BinaryExpression {
             return match self.left.to_variable() {
                 Some(variable) => {
                     let value = self.right.evaluate(scope)?;
-                    scope.set(variable, value.clone());
+                    variable.set(scope, value.clone());
                     Ok(value)
                 }
                 None => {

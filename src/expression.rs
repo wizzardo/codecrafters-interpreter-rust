@@ -312,7 +312,6 @@ impl Expression for ForExpression {
             e.evaluate(scope)?;
         }
 
-        scope.push_scope();
         while self.condition.evaluate(scope)?.is_true() {
             value = self.body.evaluate(scope)?;
             if let Value::Return(v) = value {
@@ -323,7 +322,6 @@ impl Expression for ForExpression {
                 e.evaluate(scope)?;
             }
         };
-        scope.pop_scope();
         scope.pop_scope();
         Ok(value)
     }

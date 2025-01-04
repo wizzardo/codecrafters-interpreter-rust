@@ -77,23 +77,23 @@ impl Scope {
     pub fn define(&mut self, key: String, value: Value) {
         self.current.data.borrow_mut().insert(key, Rc::new(RefCell::new(value)));
     }
-    pub fn set(&mut self, key: String, value: Value) {
+    pub fn set(&mut self, key: &String, value: Value) {
         let mut node = self.current.as_ref();
         loop {
             let mut map = node.data.borrow_mut();
-            match map.entry(key.clone()) {
-                Entry::Occupied(mut e) => {
-                    e.insert(Rc::new(RefCell::new(value)));
-                    break;
-                }
-                Entry::Vacant(_) => {
+            match map.get_mut(key) {
+                None => {
                     if let Some(parent) = &node.parent {
                         node = parent
                     } else {
                         panic!("Scope not found");
                     }
                 }
-            };
+                Some(rc) => {
+                    rc.replace(value);
+                    break
+                }
+            }
         }
     }
     pub fn get(&self, key: &String) -> Option<Rc<RefCell<Value>>> {

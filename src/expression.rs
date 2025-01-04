@@ -7,7 +7,7 @@ use crate::tokenizer::{Lexeme, Token};
 pub trait Expression {
     fn to_string(&self) -> String;
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String>;
-    fn to_variable(&self) -> Option<String> {
+    fn to_variable(&self) -> Option<&String> {
         None
     }
 }
@@ -456,8 +456,8 @@ impl Expression for VariableExpression {
         }
     }
 
-    fn to_variable(&self) -> Option<String> {
-        Some(self.name.clone())
+    fn to_variable(&self) -> Option<&String> {
+        Some(&self.name)
     }
 }
 

@@ -128,4 +128,8 @@ impl Scope {
     pub fn is_global(&self) -> bool {
         self.current.parent.is_none()
     }
+    
+    pub fn is_defined_in_this_scope(&self, key: &String) -> bool {
+        self.current.data.borrow().contains_key(key)
+    }
 }

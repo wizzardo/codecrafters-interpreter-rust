@@ -2,7 +2,7 @@ use scope::Scope;
 use value::Value;
 use std::env;
 use std::time::SystemTime;
-use crate::expression::NativeFunctionExpression;
+use crate::expression::{Expression, NativeFunctionExpression};
 
 mod tokenizer;
 mod parser;
@@ -75,19 +75,24 @@ fn main() {
 
             let statements = parser::parse_statements(lexemes);
             let mut _result;
+
+            if let Err(s) = resolve(scope.clone_scope(), &statements) {
+                eprintln!("{s}");
+                if s.contains("not found") {
+                    std::process::exit(70);
+                } else {
+                    std::process::exit(65);
+                }
+            }
+            
+            
             for x in statements {
                 eprintln!("evaluating {}", x.to_string());
                 _result = match x.evaluate(&mut scope) {
                     Ok(v) => { v }
                     Err(s) => {
                         eprintln!("{s}");
-                        
-                        // because codecrafters want it to be a 'compile-time' error, but it's 'runtime-time' error in the book
-                        if s.contains("uninitialized") {
-                            std::process::exit(65);
-                        } else {
-                            std::process::exit(70);
-                        }
+                        std::process::exit(70);
                     }
                 };
             }
@@ -97,6 +102,15 @@ fn main() {
             return;
         }
     }
+}
+
+fn resolve(mut scope: Scope, statements: &Vec<Box<dyn Expression>>) -> Result<(), String> {
+    for x in statements {
+        if let Err(s) = x.resolve(&mut scope) {
+            return Err(s);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -487,5 +501,45 @@ mod tests {
         }
 
         assert_eq!(format!("55"), result.to_string());
+    }
+
+    #[test]
+    fn test_variable_redeclaration() {
+        let (lexemes, _) = tokenize(r##"
+        fun foo(a) {
+          // Attempting to declare a variable with same name as parameter
+          var a; // This should be a compile error
+        }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = resolve(Scope::new(), &expressions);
+
+        if let Err(message) = result {
+            assert_eq!(format!("Variable a already defined"), message);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_variable_redeclaration_2() {
+        let (lexemes, _) = tokenize(r##"
+        // Declare outer variable 'a' in global scope
+        var a = "outer";
+        {
+          // Attempting to declare local variable'a' initialized with itself
+          var a = a; // This should be a compile error
+        }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = resolve(Scope::new(), &expressions);
+
+        if let Err(message) = result {
+            assert_eq!(format!("Variable a is uninitialized"), message);
+        } else {
+            assert!(false);
+        }
     }
 }

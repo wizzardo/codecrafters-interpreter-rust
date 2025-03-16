@@ -81,7 +81,7 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         } else if lexeme.token == Token::FOR {
             parse_for(iterator)
         } else if lexeme.token == Token::LEFT_BRACE {
-            parse_block(iterator)
+            parse_block(iterator, true)
         } else if lexeme.token == Token::BANG {
             parse_unary_not(iterator)
         } else if lexeme.token == Token::MINUS {
@@ -419,13 +419,13 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     Box::new(ForExpression::new(before, condition, after, body))
 }
 
-fn parse_block(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+fn parse_block(iterator: &mut LexemeIterator, create_subscope_on_execution: bool) -> Box<dyn Expression> {
     let start = iterator.peek().unwrap().clone();
     iterator.advance();
     if let Some(l) = iterator.peek() {
         if l.token == Token::RIGHT_BRACE {
             iterator.advance();
-            return Box::new(BlockExpression::new(start.clone(), start, Vec::new()))
+            return Box::new(BlockExpression::new(start.clone(), start, Vec::new(), create_subscope_on_execution))
         }
     }
     let mut expressions = vec![];
@@ -447,7 +447,7 @@ fn parse_block(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         };
     }
     iterator.advance();
-    Box::new(BlockExpression::new(start, end, expressions))
+    Box::new(BlockExpression::new(start, end, expressions, create_subscope_on_execution))
 }
 
 fn parse_unary_not(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
@@ -544,7 +544,7 @@ fn parse_function(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         eprintln!("expected {{ after function arguments");
         std::process::exit(65);
     }
-    let body = parse_block(iterator);
+    let body = parse_block(iterator, false);
     Box::new(FunctionDefinitionExpression::new(lexeme, name, args, body))
 }
 

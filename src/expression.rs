@@ -9,6 +9,8 @@ use crate::tokenizer::{Lexeme, Token};
 pub trait Expression {
     fn to_string(&self) -> String;
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String>;
+    #[allow(unused_variables)]
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> { Ok(()) }
     fn to_variable(&self) -> Option<&VariableExpression> {
         None
     }
@@ -20,6 +22,7 @@ pub trait Expression {
 pub trait Function {
     fn to_string(&self) -> String;
     fn evaluate(&self, args: Vec<Value>) -> Result<Value, String>;
+    fn resolve(&self) -> Result<(), String> { Ok(()) }
 }
 
 #[allow(unused)]
@@ -95,8 +98,8 @@ pub struct BlockExpression {
 }
 
 impl BlockExpression {
-    pub fn new(start: Lexeme, end: Lexeme, expressions: Vec<Box<dyn Expression>>) -> Self {
-        let scoped = expressions.iter().any(|x| x.needs_subscope());
+    pub fn new(start: Lexeme, end: Lexeme, expressions: Vec<Box<dyn Expression>>, create_subscope_on_execution: bool) -> Self {
+        let scoped = create_subscope_on_execution && expressions.iter().any(|x| x.needs_subscope());
         BlockExpression { start, end, expressions, scoped }
     }
 }
@@ -358,6 +361,19 @@ impl Expression for BlockExpression {
         }
         Ok(value)
     }
+    
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        if self.scoped {
+            scope.push_scope();
+        }
+        for x in &self.expressions {
+            x.resolve(scope)?;
+        }
+        if self.scoped {
+            scope.pop_scope();
+        }
+        Ok(())
+    }
 }
 
 impl Expression for UnaryNotExpression {
@@ -447,15 +463,22 @@ impl Expression for VariableDeclarationExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        if !scope.is_global() {
-            scope.define(self.name.clone(), Value::Uninitialized);
-        }
         let value = self.expression.evaluate(scope)?;
-        if let Value::Uninitialized = value {
-            return Err(format!("Variable {} is uninitialized", self.name));
-        }
         scope.define(self.name.clone(), value);
         Ok(Value::Primitive(Primitive::Nil))
+    }
+    
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        if !scope.is_global() {
+            if scope.is_defined_in_this_scope(&self.name) {
+                return Err(format!("Variable {} already defined", self.name));
+            }
+            scope.define(self.name.clone(), Value::Uninitialized);
+        }
+
+        self.expression.resolve(scope)?;
+        scope.define(self.name.clone(), Value::Primitive(Primitive::Nil));
+        Ok(())
     }
 
     fn needs_subscope(&self) -> bool {
@@ -475,6 +498,20 @@ impl Expression for VariableExpression {
             }
             Some(v) => {
                 Ok(v)
+            }
+        }
+    }
+    
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        match self.get(scope) {
+            None => {
+                Err(format!("Variable {} not found", self.name))
+            }
+            Some(v) => {
+                if let Value::Uninitialized = v {
+                    return Err(format!("Variable {} is uninitialized", self.name));
+                }
+                Ok(())
             }
         }
     }
@@ -546,6 +583,13 @@ impl Expression for FunctionCallExpression {
         }
         fun.evaluate(args)
     }
+    
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        for a in &self.args {
+            a.resolve(scope)?
+        }
+        Ok(())
+    }
 }
 
 impl Expression for FunctionDefinitionExpression {
@@ -565,6 +609,20 @@ impl Expression for FunctionDefinitionExpression {
         scope.define(self.name.clone(), Value::Function(fun.clone()));
         function_scope.define(self.name.clone(), Value::Function(fun.clone()));
         Ok(Value::Function(fun.clone()))
+    }
+    
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        for arg in &self.args {
+            if 1 != self.args.iter().filter(|x| x.eq(&arg)).count() {
+                return Err(format!("Argument {} declared more than once", arg));
+            }
+        }
+        
+        let f = self.evaluate(scope)?;
+        if let Value::Function(f) = f {
+            f.resolve()?;
+        }
+        Ok(())
     }
 
     fn needs_subscope(&self) -> bool {
@@ -601,6 +659,18 @@ impl Function for FunctionExpression {
             }
             Err(e) => { Err(e) }
         }
+    }
+    
+    fn resolve(&self) -> Result<(), String> {
+        let mut scope = self.scope.clone();
+        scope.push_scope();
+
+        for i in (0..self.args.len()).rev() {
+            scope.define(self.args[i].clone(), Value::Primitive(Primitive::Nil));
+        }
+        self.body.resolve(&mut scope)?;
+        scope.pop_scope();
+        Ok(())
     }
 }
 

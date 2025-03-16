@@ -545,14 +545,16 @@ impl Expression for FunctionDefinitionExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let mut function_scope = scope.clone_scope();
         let fun: Arc<Box<dyn Function>> = Arc::new(Box::new(FunctionExpression {
             lexeme: self.lexeme.clone(),
             name: self.name.clone(),
             args: self.args.clone(),
             body: self.body.clone(),
-            scope: scope.clone(),
+            scope: function_scope.clone(),
         }));
         scope.define(self.name.clone(), Value::Function(fun.clone()));
+        function_scope.define(self.name.clone(), Value::Function(fun.clone()));
         Ok(Value::Function(fun.clone()))
     }
 

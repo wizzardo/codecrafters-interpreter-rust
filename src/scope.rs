@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use crate::primitive::Primitive;
 use crate::value::Value;
 
 // #[derive(Debug)]
@@ -74,7 +75,10 @@ impl Scope {
         self.current = self.current.parent.as_ref().unwrap().clone();
     }
     pub fn define(&mut self, key: String, value: Value) {
-        self.current.data.borrow_mut().insert(key, Rc::new(RefCell::new(value)));
+        // self.current.data.borrow_mut().insert(key, Rc::new(RefCell::new(value)));
+        self.current.data.borrow_mut().entry(key)
+            .or_insert_with(|| Rc::new(RefCell::new(Value::Primitive(Primitive::Nil))))
+            .replace(value);
     }
     pub fn set(&mut self, key: &String, value: Value) {
         let mut node = self.current.as_ref();
@@ -113,5 +117,11 @@ impl Scope {
     }
     pub fn equals(&self, other: &Scope) -> bool {
         Rc::ptr_eq(&self.current, &other.current)
+    }
+    
+    pub fn clone_scope(&self) -> Self {
+        let parent = self.current.parent.clone();
+        let data = self.current.data.clone();
+        Scope { current: Rc::new(ScopeNode { parent, data }) }
     }
 }

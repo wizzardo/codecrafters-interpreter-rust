@@ -435,4 +435,51 @@ mod tests {
 
         assert_eq!(format!("6"), result.to_string());
     }
+
+    #[test]
+    fn test_global_variable() {
+        let (lexemes, _) = tokenize(r##"
+        var variable = "global";
+        
+        {
+          fun f() {
+            return variable;
+          }
+        
+          var variable = "local";
+        
+          f();
+        }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        let mut result = Value::from_number(0.0);
+        for exp in expressions {
+            result = exp.evaluate(&mut scope).unwrap();
+        }
+
+        assert_eq!(format!("global"), result.to_string());
+    }
+
+    #[test]
+    fn test_fib() {
+        let (lexemes, _) = tokenize(r##"
+        fun fib(n) {
+          if (n < 2) return n;
+          return fib(n - 2) + fib(n - 1);
+        }
+        
+        fib(10);
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        let mut result = Value::from_number(0.0);
+        for exp in expressions {
+            result = exp.evaluate(&mut scope).unwrap();
+        }
+
+        assert_eq!(format!("55"), result.to_string());
+    }
 }

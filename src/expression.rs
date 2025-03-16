@@ -387,6 +387,7 @@ impl Expression for UnaryNotExpression {
             }
             Value::Function(e) => { Err(format!("Cannot apply unary not to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary not to a return {}", e.to_string())) }
+            Value::Uninitialized => Err("Cannot apply unary not to uninitialized value".to_string()),
         }
     }
 }
@@ -410,6 +411,7 @@ impl Expression for UnaryMinusExpression {
             }
             Value::Function(e) => { Err(format!("Cannot apply unary minus to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary minus to a return {}", e.to_string())) }
+            Value::Uninitialized => Err("Cannot apply unary minus to uninitialized value".to_string()),
         }
     }
 }
@@ -433,6 +435,7 @@ impl Expression for PrintExpression {
             }
             Value::Function(e) => { println!("{}", e.to_string()) }
             Value::Return(it) => { println!("return {}", it.to_string()) }
+            Value::Uninitialized => return Err("cannot print uninitialized value".to_string()),
         }
         Ok(Value::Primitive(Primitive::Nil))
     }
@@ -444,7 +447,13 @@ impl Expression for VariableDeclarationExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        if !scope.is_global() {
+            scope.define(self.name.clone(), Value::Uninitialized);
+        }
         let value = self.expression.evaluate(scope)?;
+        if let Value::Uninitialized = value {
+            return Err(format!("Variable {} is uninitialized", self.name));
+        }
         scope.define(self.name.clone(), value);
         Ok(Value::Primitive(Primitive::Nil))
     }

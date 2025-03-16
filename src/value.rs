@@ -8,6 +8,7 @@ pub enum Value {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
     Return(ReturnValue),
+    Uninitialized,
 }
 
 #[allow(unused)]
@@ -17,6 +18,7 @@ impl Value {
             Value::Primitive(p) => p.to_string(),
             Value::Function(e) => e.to_string(),
             Value::Return(it) => it.to_string(),
+            Value::Uninitialized => "uninitialized".to_string(),
         }
     }
     pub fn is_true(&self) -> bool {
@@ -29,6 +31,7 @@ impl Value {
             },
             Value::Function(_) => true,
             Value::Return(_) => false,
+            Value::Uninitialized => false
         }
     }
 
@@ -51,6 +54,7 @@ impl Debug for Value {
 pub enum ReturnValue {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
+    Uninitialized,
 }
 
 impl ReturnValue {
@@ -58,12 +62,14 @@ impl ReturnValue {
         match self {
             ReturnValue::Primitive(it) => { Value::Primitive(it) }
             ReturnValue::Function(it) => { Value::Function(it) }
+            ReturnValue::Uninitialized => Value::Uninitialized,
         }
     }
     pub fn to_string(&self) -> String {
         match self {
             ReturnValue::Primitive(p) => p.to_string(),
             ReturnValue::Function(e) => e.to_string(),
+            ReturnValue::Uninitialized => "uninitialized".to_string()
         }
     }
 
@@ -72,6 +78,7 @@ impl ReturnValue {
             Value::Primitive(it) => { ReturnValue::Primitive(it) }
             Value::Function(it) => { ReturnValue::Function(it) }
             Value::Return(it) => { it }
+            Value::Uninitialized => {ReturnValue::Uninitialized}
         }
     }
 }

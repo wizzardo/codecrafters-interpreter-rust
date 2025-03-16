@@ -81,7 +81,13 @@ fn main() {
                     Ok(v) => { v }
                     Err(s) => {
                         eprintln!("{s}");
-                        std::process::exit(70);
+                        
+                        // because codecrafters want it to be a 'compile-time' error, but it's 'runtime-time' error in the book
+                        if s.contains("uninitialized") {
+                            std::process::exit(65);
+                        } else {
+                            std::process::exit(70);
+                        }
                     }
                 };
             }

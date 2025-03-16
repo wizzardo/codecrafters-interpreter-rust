@@ -118,10 +118,14 @@ impl Scope {
     pub fn equals(&self, other: &Scope) -> bool {
         Rc::ptr_eq(&self.current, &other.current)
     }
-    
+
     pub fn clone_scope(&self) -> Self {
         let parent = self.current.parent.clone();
         let data = self.current.data.clone();
         Scope { current: Rc::new(ScopeNode { parent, data }) }
+    }
+    
+    pub fn is_global(&self) -> bool {
+        self.current.parent.is_none()
     }
 }

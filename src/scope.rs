@@ -80,6 +80,9 @@ impl Scope {
             .or_insert_with(|| Rc::new(RefCell::new(Value::Primitive(Primitive::Nil))))
             .replace(value);
     }
+    pub fn remove(&mut self, key: &String) {
+        self.current.data.borrow_mut().remove(key);
+    }
     pub fn set(&mut self, key: &String, value: Value) {
         let mut node = self.current.as_ref();
         loop {

@@ -266,6 +266,10 @@ impl Expression for GroupExpression {
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         self.expression.evaluate(scope)
     }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.expression.resolve(scope)
+    }
 }
 
 impl Expression for IfExpression {
@@ -282,6 +286,10 @@ impl Expression for IfExpression {
         } else {
             Ok(Value::Primitive(Primitive::Nil))
         }
+    }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.body.resolve(scope)
     }
 }
 
@@ -300,6 +308,10 @@ impl Expression for WhileExpression {
             }
         };
         Ok(value)
+    }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.body.resolve(scope)
     }
 }
 
@@ -336,6 +348,22 @@ impl Expression for ForExpression {
         scope.pop_scope();
         Ok(value)
     }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        scope.push_scope();
+        match &self.before {
+            None => {}
+            Some(e) => { e.resolve(scope)?; }
+        };
+        match &self.after {
+            None => {}
+            Some(e) => { e.resolve(scope)?; }
+        };
+        self.condition.resolve(scope)?;
+        self.body.resolve(scope)?;
+        scope.pop_scope();
+        Ok(())
+    }
 }
 
 impl Expression for BlockExpression {
@@ -361,7 +389,7 @@ impl Expression for BlockExpression {
         }
         Ok(value)
     }
-    
+
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
         if self.scoped {
             scope.push_scope();
@@ -406,6 +434,10 @@ impl Expression for UnaryNotExpression {
             Value::Uninitialized => Err("Cannot apply unary not to uninitialized value".to_string()),
         }
     }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.expression.resolve(scope)
+    }
 }
 
 impl Expression for UnaryMinusExpression {
@@ -429,6 +461,10 @@ impl Expression for UnaryMinusExpression {
             Value::Return(e) => { Err(format!("Cannot apply unary minus to a return {}", e.to_string())) }
             Value::Uninitialized => Err("Cannot apply unary minus to uninitialized value".to_string()),
         }
+    }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.expression.resolve(scope)
     }
 }
 
@@ -455,6 +491,10 @@ impl Expression for PrintExpression {
         }
         Ok(Value::Primitive(Primitive::Nil))
     }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.expression.resolve(scope)
+    }
 }
 
 impl Expression for VariableDeclarationExpression {
@@ -467,11 +507,11 @@ impl Expression for VariableDeclarationExpression {
         scope.define(self.name.clone(), value);
         Ok(Value::Primitive(Primitive::Nil))
     }
-    
+
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
         if !scope.is_global() {
             if scope.is_defined_in_this_scope(&self.name) {
-                return Err(format!("Variable {} already defined", self.name));
+                return Err(format!("[line {}] Variable {} already defined", self.lexeme.line, self.name));
             }
             scope.define(self.name.clone(), Value::Uninitialized);
         }
@@ -501,7 +541,7 @@ impl Expression for VariableExpression {
             }
         }
     }
-    
+
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
         match self.get(scope) {
             None => {
@@ -583,7 +623,7 @@ impl Expression for FunctionCallExpression {
         }
         fun.evaluate(args)
     }
-    
+
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
         for a in &self.args {
             a.resolve(scope)?
@@ -610,18 +650,20 @@ impl Expression for FunctionDefinitionExpression {
         function_scope.define(self.name.clone(), Value::Function(fun.clone()));
         Ok(Value::Function(fun.clone()))
     }
-    
+
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
         for arg in &self.args {
             if 1 != self.args.iter().filter(|x| x.eq(&arg)).count() {
                 return Err(format!("Argument {} declared more than once", arg));
             }
         }
-        
+
+        scope.define("%in function%".to_string(), Value::Primitive(Primitive::Nil));
         let f = self.evaluate(scope)?;
         if let Value::Function(f) = f {
             f.resolve()?;
         }
+        scope.remove(&"%in function%".to_string());
         Ok(())
     }
 
@@ -660,7 +702,7 @@ impl Function for FunctionExpression {
             Err(e) => { Err(e) }
         }
     }
-    
+
     fn resolve(&self) -> Result<(), String> {
         let mut scope = self.scope.clone();
         scope.push_scope();
@@ -783,6 +825,11 @@ impl Expression for BinaryExpression {
             }
         }
     }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.left.resolve(scope)?;
+        self.right.resolve(scope)
+    }
 }
 
 
@@ -830,6 +877,14 @@ impl Expression for ReturnExpression {
         let value = self.expression.evaluate(scope)?;
         Ok(Value::Return(ReturnValue::from_value(value)))
     }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        let key = "%in function%".to_string();
+        match scope.get(&key) {
+            None => Err(format!("Cannot return from top level")),
+            Some(_) => Ok(())
+        }
+    }
 }
 
 
@@ -865,5 +920,9 @@ impl Expression for AnonymousFunctionCallExpression {
             args.push(a.evaluate(scope)?);
         }
         fun.evaluate(args)
+    }
+
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        self.fun.resolve(scope)
     }
 }

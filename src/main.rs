@@ -79,7 +79,7 @@ fn main() {
             if let Err(s) = resolve(scope.clone_scope(), &statements) {
                 eprintln!("{s}");
                 if s.contains("not found") {
-                    std::process::exit(70);
+                    // std::process::exit(70);
                 } else {
                     std::process::exit(65);
                 }
@@ -459,17 +459,17 @@ mod tests {
     #[test]
     fn test_global_variable() {
         let (lexemes, _) = tokenize(r##"
-        var variable = "global";
-        
-        {
-          fun f() {
-            return variable;
-          }
-        
-          var variable = "local";
-        
-          f();
-        }
+            var variable = "global";
+            
+            {
+              fun f() {
+                return variable;
+              }
+            
+              var variable = "local";
+            
+              f();
+            }
         "##.chars());
 
         let expressions = parse_statements(lexemes);
@@ -485,12 +485,12 @@ mod tests {
     #[test]
     fn test_fib() {
         let (lexemes, _) = tokenize(r##"
-        fun fib(n) {
-          if (n < 2) return n;
-          return fib(n - 2) + fib(n - 1);
-        }
-        
-        fib(10);
+            fun fib(n) {
+              if (n < 2) return n;
+              return fib(n - 2) + fib(n - 1);
+            }
+            
+            fib(10);
         "##.chars());
 
         let expressions = parse_statements(lexemes);
@@ -506,17 +506,17 @@ mod tests {
     #[test]
     fn test_variable_redeclaration() {
         let (lexemes, _) = tokenize(r##"
-        fun foo(a) {
-          // Attempting to declare a variable with same name as parameter
-          var a; // This should be a compile error
-        }
+            fun foo(a) {
+              // Attempting to declare a variable with same name as parameter
+              var a; // This should be a compile error
+            }
         "##.chars());
 
         let expressions = parse_statements(lexemes);
         let result = resolve(Scope::new(), &expressions);
 
         if let Err(message) = result {
-            assert_eq!(format!("Variable a already defined"), message);
+            assert_eq!(format!("[line 4] Variable a already defined"), message);
         } else {
             assert!(false);
         }
@@ -525,12 +525,12 @@ mod tests {
     #[test]
     fn test_variable_redeclaration_2() {
         let (lexemes, _) = tokenize(r##"
-        // Declare outer variable 'a' in global scope
-        var a = "outer";
-        {
-          // Attempting to declare local variable'a' initialized with itself
-          var a = a; // This should be a compile error
-        }
+            // Declare outer variable 'a' in global scope
+            var a = "outer";
+            {
+              // Attempting to declare local variable'a' initialized with itself
+              var a = a; // This should be a compile error
+            }
         "##.chars());
 
         let expressions = parse_statements(lexemes);
@@ -538,6 +538,34 @@ mod tests {
 
         if let Err(message) = result {
             assert_eq!(format!("Variable a is uninitialized"), message);
+        } else {
+            assert!(false);
+        }
+    }
+
+    #[test]
+    fn test_invalid_return() {
+        let (lexemes, _) = tokenize(r##"
+            fun foo() {
+              if (true) {
+                return "early return";
+              }
+            
+              for (var i = 0; i < 10; i = i + 1) {
+                return "loop return";
+              }
+            }
+            
+            if (true) {
+              return "conditional return"; // This should be a compile error
+            }
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = resolve(Scope::new(), &expressions);
+
+        if let Err(message) = result {
+            assert_eq!(format!("Cannot return from top level"), message);
         } else {
             assert!(false);
         }

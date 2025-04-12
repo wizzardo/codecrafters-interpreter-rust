@@ -25,6 +25,37 @@ pub trait Function {
     fn resolve(&self) -> Result<(), String> { Ok(()) }
 }
 
+pub trait Class {
+    fn to_string(&self) -> String;
+}
+
+pub trait Object {
+    fn get_class(&self) -> Arc<Box<dyn Class>>;
+    fn to_string(&self) -> String {
+        self.get_class().to_string()
+    }
+}
+
+pub struct SimpleClass{
+    name: String,
+}
+
+impl Class for SimpleClass {
+    fn to_string(&self) -> String {
+        self.name.clone()
+    }
+}
+
+pub struct ClassObject{
+    class: Arc<Box<dyn Class>>,
+}
+
+impl Object for ClassObject {
+    fn get_class(&self) -> Arc<Box<dyn Class>> {
+        self.class.clone()
+    }
+}
+
 #[allow(unused)]
 pub struct LiteralExpression {
     lexeme: Lexeme,
@@ -150,6 +181,18 @@ pub struct VariableDeclarationExpression {
 impl VariableDeclarationExpression {
     pub fn new(lexeme: Lexeme, name: String, expression: Box<dyn Expression>) -> Self {
         VariableDeclarationExpression { lexeme, name, expression }
+    }
+}
+
+#[allow(unused)]
+pub struct ClassDeclarationExpression {
+    lexeme: Lexeme,
+    name: String,
+}
+
+impl ClassDeclarationExpression {
+    pub fn new(lexeme: Lexeme, name: String) -> Self {
+        ClassDeclarationExpression { lexeme, name }
     }
 }
 
@@ -429,6 +472,7 @@ impl Expression for UnaryNotExpression {
                     }
                 }
             }
+            Value::Object(e) => { Err(format!("Cannot apply unary not to an object {}", e.to_string())) }
             Value::Function(e) => { Err(format!("Cannot apply unary not to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary not to a return {}", e.to_string())) }
             Value::Uninitialized => Err("Cannot apply unary not to uninitialized value".to_string()),
@@ -457,6 +501,7 @@ impl Expression for UnaryMinusExpression {
                     p => { Err(format!("Cannot apply unary minus to {}", p.to_string())) }
                 }
             }
+            Value::Object(e) => { Err(format!("Cannot apply unary minus to an object {}", e.to_string())) }
             Value::Function(e) => { Err(format!("Cannot apply unary minus to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary minus to a return {}", e.to_string())) }
             Value::Uninitialized => Err("Cannot apply unary minus to uninitialized value".to_string()),
@@ -485,6 +530,7 @@ impl Expression for PrintExpression {
                     Primitive::Nil => { println!("nil"); }
                 }
             }
+            Value::Object(e) => { println!("{}", e.to_string()) }
             Value::Function(e) => { println!("{}", e.to_string()) }
             Value::Return(it) => { println!("return {}", it.to_string()) }
             Value::Uninitialized => return Err("cannot print uninitialized value".to_string()),
@@ -521,6 +567,29 @@ impl Expression for VariableDeclarationExpression {
         Ok(())
     }
 
+    fn needs_subscope(&self) -> bool {
+        true
+    }
+}
+
+impl Expression for ClassDeclarationExpression {
+    fn to_string(&self) -> String {
+        format!("class {}", self.name.to_string())
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let class: Arc<Box<dyn Class>> = Arc::new(Box::new(SimpleClass { name: self.name.clone() }));
+        let class: Arc<Box<dyn Object>> = Arc::new(Box::new(ClassObject { class }));
+
+        scope.define(self.name.clone(), Value::Object(class.clone()));
+
+        Ok(Value::Object(class))
+    }
+    
+    fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
+        let _ = self.evaluate(scope)?;
+        Ok(())
+    }
     fn needs_subscope(&self) -> bool {
         true
     }

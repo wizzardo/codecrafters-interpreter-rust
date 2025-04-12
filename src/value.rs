@@ -1,4 +1,4 @@
-use crate::expression::{Function};
+use crate::expression::{Function, Object};
 use crate::primitive::Primitive;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -7,6 +7,7 @@ use std::sync::Arc;
 pub enum Value {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
+    Object(Arc<Box<dyn Object>>),
     Return(ReturnValue),
     Uninitialized,
 }
@@ -18,6 +19,7 @@ impl Value {
             Value::Primitive(p) => p.to_string(),
             Value::Function(e) => e.to_string(),
             Value::Return(it) => it.to_string(),
+            Value::Object(it) => it.to_string(),
             Value::Uninitialized => "uninitialized".to_string(),
         }
     }
@@ -30,6 +32,7 @@ impl Value {
                 Primitive::Nil => false,
             },
             Value::Function(_) => true,
+            Value::Object(_) => true,
             Value::Return(_) => false,
             Value::Uninitialized => false
         }
@@ -54,6 +57,7 @@ impl Debug for Value {
 pub enum ReturnValue {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
+    Object(Arc<Box<dyn Object>>),
     Uninitialized,
 }
 
@@ -62,6 +66,7 @@ impl ReturnValue {
         match self {
             ReturnValue::Primitive(it) => { Value::Primitive(it) }
             ReturnValue::Function(it) => { Value::Function(it) }
+            ReturnValue::Object(it) => { Value::Object(it) }
             ReturnValue::Uninitialized => Value::Uninitialized,
         }
     }
@@ -69,6 +74,7 @@ impl ReturnValue {
         match self {
             ReturnValue::Primitive(p) => p.to_string(),
             ReturnValue::Function(e) => e.to_string(),
+            ReturnValue::Object(e) => e.to_string(),
             ReturnValue::Uninitialized => "uninitialized".to_string()
         }
     }
@@ -77,6 +83,7 @@ impl ReturnValue {
         match v {
             Value::Primitive(it) => { ReturnValue::Primitive(it) }
             Value::Function(it) => { ReturnValue::Function(it) }
+            Value::Object(it) => { ReturnValue::Object(it) }
             Value::Return(it) => { it }
             Value::Uninitialized => {ReturnValue::Uninitialized}
         }

@@ -570,4 +570,24 @@ mod tests {
             assert!(false);
         }
     }
+
+    #[test]
+    fn test_class_visibility() {
+        let (lexemes, _) = tokenize(r##"
+            {
+              class Dinosaur {}
+              print Dinosaur;
+            }
+            print Dinosaur;
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = resolve(Scope::new(), &expressions);
+
+        if let Err(message) = result {
+            assert_eq!(format!("Variable Dinosaur not found"), message);
+        } else {
+            assert!(false);
+        }
+    }
 }

@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression, ReturnExpression, AnonymousFunctionCallExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression, ReturnExpression, AnonymousFunctionCallExpression, ClassDeclarationExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -92,6 +92,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             parse_return(iterator)
         } else if lexeme.token == Token::VAR {
             parse_var(iterator)
+        } else if lexeme.token == Token::CLASS {
+            parse_class(iterator)
         } else if lexeme.token == Token::FUN {
             parse_function(iterator)
         } else if lexeme.token == Token::IDENTIFIER {
@@ -501,6 +503,30 @@ fn parse_var(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             std::process::exit(65);
         }
     }
+}
+
+fn parse_class(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    iterator.advance();
+    let name = iterator.peek().expect("expected a class name");
+    let name = name.src.iter().collect();
+    iterator.advance();
+
+    if !iterator.is(Token::LEFT_BRACE) {
+        eprintln!("expected {{ after class name");
+        std::process::exit(65);
+    }
+    iterator.advance();
+
+
+    //todo class internals are not implemented yet
+    if !iterator.is(Token::RIGHT_BRACE) {
+        eprintln!("expected }} after class name");
+        std::process::exit(65);
+    }
+    iterator.advance();
+
+    Box::new(ClassDeclarationExpression::new(lexeme, name))
 }
 
 fn parse_function(iterator: &mut LexemeIterator) -> Box<dyn Expression> {

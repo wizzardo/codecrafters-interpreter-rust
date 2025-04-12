@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -34,6 +35,7 @@ pub trait Object {
     fn to_string(&self) -> String {
         self.get_class().to_string()
     }
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub struct SimpleClass{
@@ -46,6 +48,22 @@ impl Class for SimpleClass {
     }
 }
 
+pub struct SimpleObject{
+    class: Arc<Box<dyn Class>>,
+}
+
+impl Object for SimpleObject {
+    fn get_class(&self) -> Arc<Box<dyn Class>> {
+        self.class.clone()
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn to_string(&self) -> String {
+        format!("{} instance", self.class.to_string())
+    }
+}
+
 pub struct ClassObject{
     class: Arc<Box<dyn Class>>,
 }
@@ -53,6 +71,16 @@ pub struct ClassObject{
 impl Object for ClassObject {
     fn get_class(&self) -> Arc<Box<dyn Class>> {
         self.class.clone()
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl ClassObject {
+    pub fn new(&self, _args: Vec<Value>) -> Result<Value, String> {
+        let object = SimpleObject { class: self.class.clone() };
+        Ok(Value::Object(Arc::new(Box::new(object))))
     }
 }
 
@@ -671,26 +699,40 @@ impl Expression for FunctionCallExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        let fun = match scope.get(&self.name) {
+        match scope.get(&self.name) {
             None => {
                 Err(format!("Function {} not found", self.name))
             }
             Some(v) => {
                 match &(*v.borrow()) {
                     Value::Function(e) => {
-                        Ok(e.clone())
+                        let mut args = Vec::with_capacity(self.args.len());
+                        for a in &self.args {
+                            args.push(a.evaluate(scope)?);
+                        }
+
+                        e.evaluate(args)
+                    }
+                    Value::Object(e) => {
+                        match e.as_any().downcast_ref::<ClassObject>() {
+                            None => {
+                                Err(format!("variable {} is not a function", self.name))
+                            }
+                            Some(cl) => {
+                                let mut args = Vec::with_capacity(self.args.len());
+                                for a in &self.args {
+                                    args.push(a.evaluate(scope)?);
+                                }
+                                cl.new(args)
+                            }
+                        }
                     }
                     _ => {
                         Err(format!("variable {} is not a function", self.name))
                     }
                 }
             }
-        }?;
-        let mut args = Vec::with_capacity(self.args.len());
-        for a in &self.args {
-            args.push(a.evaluate(scope)?);
         }
-        fun.evaluate(args)
     }
 
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {

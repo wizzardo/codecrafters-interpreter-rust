@@ -1,5 +1,6 @@
 use std::any::Any;
-use std::cell::RefCell;
+use std::cell::{RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use crate::value::{ReturnValue, Value};
@@ -36,6 +37,8 @@ pub trait Object {
         self.get_class().to_string()
     }
     fn as_any(&self) -> &dyn Any;
+    fn get_field(&self, field: &String) -> Result<Value, String>;
+    fn set_field(&mut self, field: &String, value: Value) -> Result<Value, String>;
 }
 
 pub struct SimpleClass{
@@ -50,6 +53,7 @@ impl Class for SimpleClass {
 
 pub struct SimpleObject{
     class: Arc<Box<dyn Class>>,
+    fields: HashMap<String, Value>,
 }
 
 impl Object for SimpleObject {
@@ -61,6 +65,21 @@ impl Object for SimpleObject {
     }
     fn to_string(&self) -> String {
         format!("{} instance", self.class.to_string())
+    }
+
+    fn get_field(&self, field: &String) -> Result<Value, String> {
+        match self.fields.get(field) {
+            None => {
+                Err(format!("Field {} not found", field))
+            }
+            Some(v) => {
+                Ok(v.clone())
+            }
+        }
+    }
+    fn set_field(&mut self, field: &String, value: Value) -> Result<Value, String> {
+        self.fields.insert(field.clone(), value.clone());
+        Ok(value)
     }
 }
 
@@ -75,12 +94,23 @@ impl Object for ClassObject {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn get_field(&self, _field: &String) -> Result<Value, String> {
+        todo!()
+    }
+
+    fn set_field(&mut self, _field: &String, _value: Value) -> Result<Value, String> {
+        Err(format!("Class is readonly object"))
+    }
 }
 
 impl ClassObject {
     pub fn new(&self, _args: Vec<Value>) -> Result<Value, String> {
-        let object = SimpleObject { class: self.class.clone() };
-        Ok(Value::Object(Arc::new(Box::new(object))))
+        let object = SimpleObject {
+            class: self.class.clone(),
+            fields: HashMap::new(),
+        };
+        Ok(Value::Object(Arc::new(RefCell::new(object))))
     }
 }
 
@@ -221,6 +251,33 @@ pub struct ClassDeclarationExpression {
 impl ClassDeclarationExpression {
     pub fn new(lexeme: Lexeme, name: String) -> Self {
         ClassDeclarationExpression { lexeme, name }
+    }
+}
+
+#[allow(unused)]
+pub struct GetFieldExpression {
+    lexeme: Lexeme,
+    variable: String,
+    field: String,
+}
+
+impl GetFieldExpression {
+    pub fn new(lexeme: Lexeme, variable: String, field: String) -> Self {
+        GetFieldExpression { lexeme, variable, field }
+    }
+}
+
+#[allow(unused)]
+pub struct SetFieldExpression {
+    lexeme: Lexeme,
+    variable: String,
+    field: String,
+    expression: Box<dyn Expression>,
+}
+
+impl SetFieldExpression {
+    pub fn new(lexeme: Lexeme, variable: String, field: String, expression: Box<dyn Expression>) -> Self {
+        SetFieldExpression { lexeme, variable, field, expression }
     }
 }
 
@@ -500,7 +557,7 @@ impl Expression for UnaryNotExpression {
                     }
                 }
             }
-            Value::Object(e) => { Err(format!("Cannot apply unary not to an object {}", e.to_string())) }
+            Value::Object(e) => { Err(format!("Cannot apply unary not to an object {}", e.borrow().to_string())) }
             Value::Function(e) => { Err(format!("Cannot apply unary not to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary not to a return {}", e.to_string())) }
             Value::Uninitialized => Err("Cannot apply unary not to uninitialized value".to_string()),
@@ -529,7 +586,7 @@ impl Expression for UnaryMinusExpression {
                     p => { Err(format!("Cannot apply unary minus to {}", p.to_string())) }
                 }
             }
-            Value::Object(e) => { Err(format!("Cannot apply unary minus to an object {}", e.to_string())) }
+            Value::Object(e) => { Err(format!("Cannot apply unary minus to an object {}", e.borrow().to_string())) }
             Value::Function(e) => { Err(format!("Cannot apply unary minus to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary minus to a return {}", e.to_string())) }
             Value::Uninitialized => Err("Cannot apply unary minus to uninitialized value".to_string()),
@@ -558,7 +615,7 @@ impl Expression for PrintExpression {
                     Primitive::Nil => { println!("nil"); }
                 }
             }
-            Value::Object(e) => { println!("{}", e.to_string()) }
+            Value::Object(e) => { println!("{}", e.borrow().to_string()) }
             Value::Function(e) => { println!("{}", e.to_string()) }
             Value::Return(it) => { println!("return {}", it.to_string()) }
             Value::Uninitialized => return Err("cannot print uninitialized value".to_string()),
@@ -607,19 +664,78 @@ impl Expression for ClassDeclarationExpression {
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let class: Arc<Box<dyn Class>> = Arc::new(Box::new(SimpleClass { name: self.name.clone() }));
-        let class: Arc<Box<dyn Object>> = Arc::new(Box::new(ClassObject { class }));
+        let class: Arc<RefCell<dyn Object>> = Arc::new(RefCell::new(ClassObject { class }));
 
         scope.define(self.name.clone(), Value::Object(class.clone()));
 
         Ok(Value::Object(class))
     }
-    
+
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
         let _ = self.evaluate(scope)?;
         Ok(())
     }
     fn needs_subscope(&self) -> bool {
         true
+    }
+}
+
+impl Expression for GetFieldExpression {
+    fn to_string(&self) -> String {
+        format!("{}.{}", self.variable, self.field)
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        match scope.get(&self.variable) {
+            None => {
+                Err(format!("Variable {} not found", self.variable))
+            }
+            Some(o) => {
+                match &(*o.borrow()) {
+                    Value::Object(o) => {
+                        o.borrow().get_field(&self.field)
+                    }
+                    v => {
+                        Err(format!("Cannot get field {} from not an object {} at line {}", self.variable, v.to_string(), self.lexeme.line))
+                    }
+                }
+            }
+        }
+    }
+
+    fn resolve(&self, _scope: &mut Scope) -> Result<(), String> {
+        // let _ = self.evaluate(scope)?;
+        Ok(())
+    }
+}
+
+impl Expression for SetFieldExpression {
+    fn to_string(&self) -> String {
+        format!("{}.{}", self.variable, self.field)
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        match scope.get(&self.variable) {
+            None => {
+                Err(format!("Variable {} not found", self.variable))
+            }
+            Some(o) => {
+                match &(*o.borrow()) {
+                    Value::Object(o) => {
+                        let value = self.expression.evaluate(scope)?;
+                        o.borrow_mut().set_field(&self.field, value)
+                    }
+                    v => {
+                        Err(format!("Cannot set field {} of not an object {} at line {}", self.variable, v.to_string(), self.lexeme.line))
+                    }
+                }
+            }
+        }
+    }
+
+    fn resolve(&self, _scope: &mut Scope) -> Result<(), String> {
+        // let _ = self.evaluate(scope)?;
+        Ok(())
     }
 }
 
@@ -714,7 +830,7 @@ impl Expression for FunctionCallExpression {
                         e.evaluate(args)
                     }
                     Value::Object(e) => {
-                        match e.as_any().downcast_ref::<ClassObject>() {
+                        match e.borrow().as_any().downcast_ref::<ClassObject>() {
                             None => {
                                 Err(format!("variable {} is not a function", self.name))
                             }

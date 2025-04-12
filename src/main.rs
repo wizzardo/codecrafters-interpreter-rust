@@ -77,7 +77,7 @@ fn main() {
             let mut _result;
 
             if let Err(s) = resolve(scope.clone_scope(), &statements) {
-                eprintln!("{s}");
+                eprintln!("resolve failed: {s}");
                 if s.contains("not found") {
                     // std::process::exit(70);
                 } else {
@@ -111,6 +111,15 @@ fn resolve(mut scope: Scope, statements: &Vec<Box<dyn Expression>>) -> Result<()
         }
     }
     Ok(())
+}
+
+#[allow(unused)]
+fn evaluate(mut scope: Scope, statements: &Vec<Box<dyn Expression>>) -> Result<Value, String> {
+    let mut result = Value::from_number(0.0);
+    for exp in statements {
+        result = exp.evaluate(&mut scope).unwrap();
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -589,5 +598,21 @@ mod tests {
         } else {
             assert!(false);
         }
+    }
+
+    #[test]
+    fn test_class_set_get_field() {
+        let (lexemes, _) = tokenize(r##"
+            class Spaceship {}
+            var falcon = Spaceship();
+            falcon.name = "Millennium Falcon";
+            falcon.speed = 75.5;
+            print falcon.name;
+            falcon.name;
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = evaluate(Scope::new(), &expressions).unwrap();
+        assert_eq!(format!("Millennium Falcon"), result.to_string());
     }
 }

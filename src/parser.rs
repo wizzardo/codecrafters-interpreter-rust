@@ -1,4 +1,4 @@
-use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression, ReturnExpression, AnonymousFunctionCallExpression, ClassDeclarationExpression};
+use crate::expression::{BinaryExpression, BlockExpression, Expression, ForExpression, FunctionDefinitionExpression, FunctionCallExpression, GroupExpression, IfExpression, LiteralExpression, NoopExpression, PrintExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression, ReturnExpression, AnonymousFunctionCallExpression, ClassDeclarationExpression, GetFieldExpression, SetFieldExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -104,6 +104,8 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
                         e = parse_anonymous_function_call(iterator, e);
                     }
                     e
+                } else if next.token == Token::DOT {
+                    parse_field_access(iterator)
                 } else {
                     parse_identifier(iterator)
                 }
@@ -527,6 +529,29 @@ fn parse_class(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     iterator.advance();
 
     Box::new(ClassDeclarationExpression::new(lexeme, name))
+}
+
+fn parse_field_access(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    let lexeme = iterator.peek().unwrap().clone();
+    let variable = iterator.peek().expect("expected a field name");
+    let variable = variable.src.iter().collect();
+    iterator.advance();
+    iterator.advance();//skip dot
+    let name = iterator.peek().expect("expected a field name");
+    let field = name.src.iter().collect();
+    iterator.advance();
+
+    if iterator.is(Token::DOT) {
+        eprintln!("field chain is not implemented yet");
+        std::process::exit(65);
+    }
+    
+    if iterator.is(Token::EQUAL) {
+        iterator.advance();
+        Box::new(SetFieldExpression::new(lexeme, variable, field, parse(iterator)))
+    } else {
+        Box::new(GetFieldExpression::new(lexeme, variable, field))
+    }
 }
 
 fn parse_function(iterator: &mut LexemeIterator) -> Box<dyn Expression> {

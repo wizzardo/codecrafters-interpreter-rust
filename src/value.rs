@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::expression::{Function, Object};
 use crate::primitive::Primitive;
 use std::fmt::{Debug, Formatter};
@@ -7,7 +8,7 @@ use std::sync::Arc;
 pub enum Value {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
-    Object(Arc<Box<dyn Object>>),
+    Object(Arc<RefCell<dyn Object>>),
     Return(ReturnValue),
     Uninitialized,
 }
@@ -19,7 +20,7 @@ impl Value {
             Value::Primitive(p) => p.to_string(),
             Value::Function(e) => e.to_string(),
             Value::Return(it) => it.to_string(),
-            Value::Object(it) => it.to_string(),
+            Value::Object(it) => it.borrow().to_string(),
             Value::Uninitialized => "uninitialized".to_string(),
         }
     }
@@ -57,7 +58,7 @@ impl Debug for Value {
 pub enum ReturnValue {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
-    Object(Arc<Box<dyn Object>>),
+    Object(Arc<RefCell<dyn Object>>),
     Uninitialized,
 }
 
@@ -74,7 +75,7 @@ impl ReturnValue {
         match self {
             ReturnValue::Primitive(p) => p.to_string(),
             ReturnValue::Function(e) => e.to_string(),
-            ReturnValue::Object(e) => e.to_string(),
+            ReturnValue::Object(e) => e.borrow().to_string(),
             ReturnValue::Uninitialized => "uninitialized".to_string()
         }
     }

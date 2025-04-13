@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use crate::expression::{Function, Object};
+use crate::expression::{Class, Function, Object};
 use crate::primitive::Primitive;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -9,6 +9,7 @@ pub enum Value {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
     Object(Arc<RefCell<dyn Object>>),
+    Class(Arc<Box<dyn Class>>),
     Return(ReturnValue),
     Uninitialized,
 }
@@ -21,6 +22,7 @@ impl Value {
             Value::Function(e) => e.to_string(),
             Value::Return(it) => it.to_string(),
             Value::Object(it) => it.borrow().to_string(),
+            Value::Class(it) => it.to_string(),
             Value::Uninitialized => "uninitialized".to_string(),
         }
     }
@@ -33,6 +35,7 @@ impl Value {
                 Primitive::Nil => false,
             },
             Value::Function(_) => true,
+            Value::Class(_) => true,
             Value::Object(_) => true,
             Value::Return(_) => false,
             Value::Uninitialized => false
@@ -59,6 +62,7 @@ pub enum ReturnValue {
     Primitive(Primitive),
     Function(Arc<Box<dyn Function>>),
     Object(Arc<RefCell<dyn Object>>),
+    Class(Arc<Box<dyn Class>>),
     Uninitialized,
 }
 
@@ -68,6 +72,7 @@ impl ReturnValue {
             ReturnValue::Primitive(it) => { Value::Primitive(it) }
             ReturnValue::Function(it) => { Value::Function(it) }
             ReturnValue::Object(it) => { Value::Object(it) }
+            ReturnValue::Class(it) => { Value::Class(it) }
             ReturnValue::Uninitialized => Value::Uninitialized,
         }
     }
@@ -76,6 +81,7 @@ impl ReturnValue {
             ReturnValue::Primitive(p) => p.to_string(),
             ReturnValue::Function(e) => e.to_string(),
             ReturnValue::Object(e) => e.borrow().to_string(),
+            ReturnValue::Class(e) => e.to_string(),
             ReturnValue::Uninitialized => "uninitialized".to_string()
         }
     }
@@ -85,6 +91,7 @@ impl ReturnValue {
             Value::Primitive(it) => { ReturnValue::Primitive(it) }
             Value::Function(it) => { ReturnValue::Function(it) }
             Value::Object(it) => { ReturnValue::Object(it) }
+            Value::Class(it) => { ReturnValue::Class(it) }
             Value::Return(it) => { it }
             Value::Uninitialized => {ReturnValue::Uninitialized}
         }

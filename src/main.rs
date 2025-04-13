@@ -117,7 +117,7 @@ fn resolve(mut scope: Scope, statements: &Vec<Box<dyn Expression>>) -> Result<()
 fn evaluate(mut scope: Scope, statements: &Vec<Box<dyn Expression>>) -> Result<Value, String> {
     let mut result = Value::from_number(0.0);
     for exp in statements {
-        result = exp.evaluate(&mut scope).unwrap();
+        result = exp.evaluate(&mut scope)?;
     }
     Ok(result)
 }
@@ -608,11 +608,30 @@ mod tests {
             falcon.name = "Millennium Falcon";
             falcon.speed = 75.5;
             print falcon.name;
-            falcon.name;
+            "name: " + falcon.name;
         "##.chars());
 
         let expressions = parse_statements(lexemes);
         let result = evaluate(Scope::new(), &expressions).unwrap();
-        assert_eq!(format!("Millennium Falcon"), result.to_string());
+        assert_eq!(format!("name: Millennium Falcon"), result.to_string());
+    }
+
+    #[test]
+    fn test_class_call_detached_method() {
+        let (lexemes, _) = tokenize(r##"
+            class Wizard {
+              castSpell(spell) {
+                return "Casting a magical spell: " + spell;
+              }
+            }
+
+            var merlin = Wizard();
+            var action = merlin.castSpell;
+            action("Fireball");
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = evaluate(Scope::new(), &expressions).unwrap();
+        assert_eq!(format!("Casting a magical spell: Fireball"), result.to_string());
     }
 }

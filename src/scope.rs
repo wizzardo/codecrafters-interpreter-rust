@@ -127,6 +127,11 @@ impl Scope {
         let data = self.current.data.clone();
         Scope { current: Rc::new(ScopeNode { parent, data }) }
     }
+    pub fn subscope(&self) -> Self {
+        let parent: Option<Rc<ScopeNode>> = Some(self.current.clone());
+        let next = Rc::new(ScopeNode { parent, data: RefCell::new(HashMap::new()) });
+        Scope { current: next }
+    }
     
     pub fn is_global(&self) -> bool {
         self.current.parent.is_none()

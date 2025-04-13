@@ -16,6 +16,9 @@ pub trait Expression {
     fn to_variable(&self) -> Option<&VariableExpression> {
         None
     }
+    fn to_function_call(&self) -> Option<&FunctionCallExpression> {
+        None
+    }
     fn needs_subscope(&self) -> bool {
         false
     }
@@ -27,8 +30,33 @@ pub trait Function {
     fn resolve(&self) -> Result<(), String> { Ok(()) }
 }
 
+pub trait Method {
+    #[allow(unused)]
+    fn to_string(&self) -> String;
+    fn evaluate(&self, this: &mut Scope, args: Vec<Value>) -> Result<Value, String>;
+    #[allow(unused)]
+    fn resolve(&self) -> Result<(), String> { Ok(()) }
+    fn get_name(&self) -> &str;
+    fn get_lexeme(&self) -> &Lexeme;
+    fn get_args(&self) -> &Vec<String>;
+    fn get_body(&self) -> Arc<Box<dyn Expression>>;
+}
+
 pub trait Class {
     fn to_string(&self) -> String;
+    fn invoke(&self, method: &String, this: &mut Scope, args: Vec<Value>) -> Result<Value, String>;
+    fn detach_method(&self, method: &String, this: Scope) -> Result<Value, String>;
+}
+
+pub fn new_instance(class: Arc<Box<dyn Class>>, _args: Vec<Value>) -> Result<Value, String> {
+    let object = SimpleObject {
+        class: class.clone(),
+        fields: Scope::new(),
+    };
+    let arc = Arc::new(RefCell::new(object));
+    arc.borrow_mut().fields.define("this".to_string(), Value::Object(arc.clone()));
+    arc.borrow_mut().fields.define(class.to_string(), Value::Class(class.clone()));
+    Ok(Value::Object(arc))
 }
 
 pub trait Object {
@@ -36,24 +64,56 @@ pub trait Object {
     fn to_string(&self) -> String {
         self.get_class().to_string()
     }
+    #[allow(unused)]
     fn as_any(&self) -> &dyn Any;
     fn get_field(&self, field: &String) -> Result<Value, String>;
     fn set_field(&mut self, field: &String, value: Value) -> Result<Value, String>;
+    fn call(&mut self, method: &String, args: Vec<Value>) -> Result<Value, String>;
 }
 
-pub struct SimpleClass{
+pub struct SimpleClass {
     name: String,
+    methods: HashMap<String, Box<dyn Method>>,
 }
 
 impl Class for SimpleClass {
     fn to_string(&self) -> String {
         self.name.clone()
     }
+
+    fn invoke(&self, method: &String, this: &mut Scope, args: Vec<Value>) -> Result<Value, String> {
+        match self.methods.get(method) {
+            None => {
+                Err(format!("Method '{}' not found", method))
+            }
+            Some(m) => {
+                m.evaluate(this, args)
+            }
+        }
+    }
+
+    fn detach_method(&self, method: &String, scope: Scope) -> Result<Value, String> {
+        match self.methods.get(method) {
+            None => {
+                Err(format!("Method '{}' not found", method))
+            }
+            Some(m) => {
+                let fun: Arc<Box<dyn Function>> = Arc::new(Box::new(FunctionExpression {
+                    lexeme: m.get_lexeme().clone(),
+                    name: m.get_name().to_string(),
+                    args: m.get_args().clone(),
+                    body: m.get_body(),
+                    scope,
+                }));
+                Ok(Value::Function(fun.clone()))
+            }
+        }
+    }
 }
 
 pub struct SimpleObject{
     class: Arc<Box<dyn Class>>,
-    fields: HashMap<String, Value>,
+    fields: Scope,
 }
 
 impl Object for SimpleObject {
@@ -70,47 +130,21 @@ impl Object for SimpleObject {
     fn get_field(&self, field: &String) -> Result<Value, String> {
         match self.fields.get(field) {
             None => {
-                Err(format!("Field {} not found", field))
+                self.class.detach_method(field, self.fields.subscope())
             }
             Some(v) => {
-                Ok(v.clone())
+                Ok(v.borrow().clone())
             }
         }
     }
     fn set_field(&mut self, field: &String, value: Value) -> Result<Value, String> {
-        self.fields.insert(field.clone(), value.clone());
+        self.fields.define(field.clone(), value.clone());
         Ok(value)
     }
-}
-
-pub struct ClassObject{
-    class: Arc<Box<dyn Class>>,
-}
-
-impl Object for ClassObject {
-    fn get_class(&self) -> Arc<Box<dyn Class>> {
-        self.class.clone()
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn get_field(&self, _field: &String) -> Result<Value, String> {
-        todo!()
-    }
-
-    fn set_field(&mut self, _field: &String, _value: Value) -> Result<Value, String> {
-        Err(format!("Class is readonly object"))
-    }
-}
-
-impl ClassObject {
-    pub fn new(&self, _args: Vec<Value>) -> Result<Value, String> {
-        let object = SimpleObject {
-            class: self.class.clone(),
-            fields: HashMap::new(),
-        };
-        Ok(Value::Object(Arc::new(RefCell::new(object))))
+    fn call(&mut self, method: &String, args: Vec<Value>) -> Result<Value, String> {
+        let mut scope = self.fields.subscope();
+        let result = self.class.invoke(method, &mut scope, args);
+        result
     }
 }
 
@@ -246,38 +280,26 @@ impl VariableDeclarationExpression {
 pub struct ClassDeclarationExpression {
     lexeme: Lexeme,
     name: String,
+    methods: Vec<MethodDefinition>,
 }
 
 impl ClassDeclarationExpression {
-    pub fn new(lexeme: Lexeme, name: String) -> Self {
-        ClassDeclarationExpression { lexeme, name }
-    }
-}
-
-#[allow(unused)]
-pub struct GetFieldExpression {
-    lexeme: Lexeme,
-    variable: String,
-    field: String,
-}
-
-impl GetFieldExpression {
-    pub fn new(lexeme: Lexeme, variable: String, field: String) -> Self {
-        GetFieldExpression { lexeme, variable, field }
+    pub fn new(lexeme: Lexeme, name: String, methods: Vec<MethodDefinition>) -> Self {
+        ClassDeclarationExpression { lexeme, name, methods }
     }
 }
 
 #[allow(unused)]
 pub struct SetFieldExpression {
     lexeme: Lexeme,
-    variable: String,
+    object: Box<dyn Expression>,
     field: String,
-    expression: Box<dyn Expression>,
+    value: Box<dyn Expression>,
 }
 
 impl SetFieldExpression {
-    pub fn new(lexeme: Lexeme, variable: String, field: String, expression: Box<dyn Expression>) -> Self {
-        SetFieldExpression { lexeme, variable, field, expression }
+    pub fn new(lexeme: Lexeme, object: Box<dyn Expression>, field: String, value: Box<dyn Expression>) -> Self {
+        SetFieldExpression { lexeme, object, field, value }
     }
 }
 
@@ -291,6 +313,10 @@ pub struct VariableExpression {
 impl VariableExpression {
     pub fn new(lexeme: Lexeme, name: String) -> Self {
         VariableExpression { lexeme, name, binded: RefCell::new(None) }
+    }
+
+    pub fn get_name(&self) -> String {
+        self.name.clone()
     }
 }
 
@@ -334,6 +360,61 @@ pub struct FunctionDefinitionExpression {
 impl FunctionDefinitionExpression {
     pub fn new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
         FunctionDefinitionExpression { lexeme, name, args, body: Arc::new(body) }
+    }
+}
+
+#[allow(unused)]
+#[derive(Clone)]
+pub struct MethodDefinition {
+    lexeme: Lexeme,
+    name: String,
+    args: Vec<String>,
+    body: Arc<Box<dyn Expression>>,
+}
+
+impl MethodDefinition {
+    pub fn new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
+        MethodDefinition { lexeme, name, args, body: Arc::new(body) }
+    }
+}
+
+impl Method for MethodDefinition {
+    fn to_string(&self) -> String {
+        format!("{} ({})", self.name, self.args.join(", "))
+    }
+
+    fn evaluate(&self, this: &mut Scope, mut args: Vec<Value>) -> Result<Value, String> {
+        if args.len() != self.args.len() {
+            return Err(format!("Method {} takes {} arguments, but got {}", self.name, self.args.len(), args.len()));
+        }
+
+        for i in (0..self.args.len()).rev() {
+            this.define(self.args[i].clone(), args.remove(i));
+        }
+
+        let result = self.body.evaluate(this);
+        match result {
+            Ok(it) => {
+                if let Value::Return(v) = it {
+                    Ok(v.to_value())
+                } else {
+                    Ok(it)
+                }
+            }
+            Err(e) => { Err(e) }
+        }
+    }
+    fn get_args(&self) -> &Vec<String> {
+        &self.args
+    }
+    fn get_body(&self) -> Arc<Box<dyn Expression>> {
+        self.body.clone()
+    }
+    fn get_lexeme(&self) -> &Lexeme {
+        &self.lexeme
+    }
+    fn get_name(&self) -> &str {
+        self.name.as_str()
     }
 }
 
@@ -558,6 +639,7 @@ impl Expression for UnaryNotExpression {
                 }
             }
             Value::Object(e) => { Err(format!("Cannot apply unary not to an object {}", e.borrow().to_string())) }
+            Value::Class(e) => { Err(format!("Cannot apply unary not to a function {}", e.to_string())) }
             Value::Function(e) => { Err(format!("Cannot apply unary not to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary not to a return {}", e.to_string())) }
             Value::Uninitialized => Err("Cannot apply unary not to uninitialized value".to_string()),
@@ -587,6 +669,7 @@ impl Expression for UnaryMinusExpression {
                 }
             }
             Value::Object(e) => { Err(format!("Cannot apply unary minus to an object {}", e.borrow().to_string())) }
+            Value::Class(e) => { Err(format!("Cannot apply unary minus to a function {}", e.to_string())) }
             Value::Function(e) => { Err(format!("Cannot apply unary minus to a function {}", e.to_string())) }
             Value::Return(e) => { Err(format!("Cannot apply unary minus to a return {}", e.to_string())) }
             Value::Uninitialized => Err("Cannot apply unary minus to uninitialized value".to_string()),
@@ -616,6 +699,7 @@ impl Expression for PrintExpression {
                 }
             }
             Value::Object(e) => { println!("{}", e.borrow().to_string()) }
+            Value::Class(e) => { println!("{}", e.to_string()) }
             Value::Function(e) => { println!("{}", e.to_string()) }
             Value::Return(it) => { println!("return {}", it.to_string()) }
             Value::Uninitialized => return Err("cannot print uninitialized value".to_string()),
@@ -663,12 +747,14 @@ impl Expression for ClassDeclarationExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        let class: Arc<Box<dyn Class>> = Arc::new(Box::new(SimpleClass { name: self.name.clone() }));
-        let class: Arc<RefCell<dyn Object>> = Arc::new(RefCell::new(ClassObject { class }));
+        let mut methods: HashMap<String, Box<dyn Method>> = HashMap::new();
+        self.methods.iter().for_each(|m| { methods.insert(m.name.clone(), Box::new(m.clone())); });
+        let class: Arc<Box<dyn Class>> = Arc::new(Box::new(SimpleClass { name: self.name.clone(), methods }));
+        // let class: Arc<RefCell<dyn Object>> = Arc::new(RefCell::new(ClassObject { class }));
 
-        scope.define(self.name.clone(), Value::Object(class.clone()));
+        scope.define(self.name.clone(), Value::Class(class.clone()));
 
-        Ok(Value::Object(class))
+        Ok(Value::Class(class))
     }
 
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
@@ -680,55 +766,20 @@ impl Expression for ClassDeclarationExpression {
     }
 }
 
-impl Expression for GetFieldExpression {
-    fn to_string(&self) -> String {
-        format!("{}.{}", self.variable, self.field)
-    }
-
-    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        match scope.get(&self.variable) {
-            None => {
-                Err(format!("Variable {} not found", self.variable))
-            }
-            Some(o) => {
-                match &(*o.borrow()) {
-                    Value::Object(o) => {
-                        o.borrow().get_field(&self.field)
-                    }
-                    v => {
-                        Err(format!("Cannot get field {} from not an object {} at line {}", self.variable, v.to_string(), self.lexeme.line))
-                    }
-                }
-            }
-        }
-    }
-
-    fn resolve(&self, _scope: &mut Scope) -> Result<(), String> {
-        // let _ = self.evaluate(scope)?;
-        Ok(())
-    }
-}
-
 impl Expression for SetFieldExpression {
     fn to_string(&self) -> String {
-        format!("{}.{}", self.variable, self.field)
+        format!("{}.{}", self.object.to_string(), self.field)
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        match scope.get(&self.variable) {
-            None => {
-                Err(format!("Variable {} not found", self.variable))
+        let object = self.object.evaluate(scope)?;
+        match object {
+            Value::Object(o) => {
+                let value = self.value.evaluate(scope)?;
+                o.borrow_mut().set_field(&self.field, value)
             }
-            Some(o) => {
-                match &(*o.borrow()) {
-                    Value::Object(o) => {
-                        let value = self.expression.evaluate(scope)?;
-                        o.borrow_mut().set_field(&self.field, value)
-                    }
-                    v => {
-                        Err(format!("Cannot set field {} of not an object {} at line {}", self.variable, v.to_string(), self.lexeme.line))
-                    }
-                }
+            v => {
+                Err(format!("Cannot set field {} of not an object {} at line {}", self.object.to_string(), v.to_string(), self.lexeme.line))
             }
         }
     }
@@ -829,19 +880,13 @@ impl Expression for FunctionCallExpression {
 
                         e.evaluate(args)
                     }
-                    Value::Object(e) => {
-                        match e.borrow().as_any().downcast_ref::<ClassObject>() {
-                            None => {
-                                Err(format!("variable {} is not a function", self.name))
-                            }
-                            Some(cl) => {
-                                let mut args = Vec::with_capacity(self.args.len());
-                                for a in &self.args {
-                                    args.push(a.evaluate(scope)?);
-                                }
-                                cl.new(args)
-                            }
+                    Value::Class(e) => {
+                        let mut args = Vec::with_capacity(self.args.len());
+                        for a in &self.args {
+                            args.push(a.evaluate(scope)?);
                         }
+
+                        new_instance(e.clone(), args)
                     }
                     _ => {
                         Err(format!("variable {} is not a function", self.name))
@@ -856,6 +901,9 @@ impl Expression for FunctionCallExpression {
             a.resolve(scope)?
         }
         Ok(())
+    }
+    fn to_function_call(&self) -> Option<&FunctionCallExpression> {
+        Some(self)
     }
 }
 
@@ -957,6 +1005,7 @@ impl Expression for BinaryExpression {
             Token::EQUAL_EQUAL => { "==" }
             Token::BANG_EQUAL => { "!=" }
             Token::EQUAL => { "=" }
+            Token::DOT => { "." }
             Token::OR => { "or" }
             Token::AND => { "and" }
             t => { panic!("{:?} is not an action for binary expression", t) }
@@ -973,7 +1022,7 @@ impl Expression for BinaryExpression {
                     Ok(value)
                 }
                 None => {
-                    Err(format!("Cannot assign not a variable"))
+                    Err(format!("Cannot assign not a variable: {}", self.left.to_string()))
                     // std::process::exit(65);
                 }
             };
@@ -991,6 +1040,29 @@ impl Expression for BinaryExpression {
             } else {
                 return Ok(Value::Primitive(Primitive::Boolean(false)));
             }
+        }
+
+        if self.lexeme.token == Token::DOT {
+            let left = self.left.evaluate(scope)?;
+            return match (left, self.right.to_variable()) {
+                (Value::Object(o), Some(field)) => {
+                    o.borrow().get_field(&field.name)
+                }
+                (Value::Object(o), None) => {
+                    if let Some(m) = self.right.to_function_call() {
+                        let mut args = Vec::with_capacity(m.args.len());
+                        for a in &m.args {
+                            args.push(a.evaluate(scope)?);
+                        }
+                        o.borrow_mut().call(&m.name, args)
+                    } else {
+                        Err(format!("right part is not an identifier: {}", self.right.to_string()))
+                    }
+                }
+                (_, _) => {
+                    Err(format!("left part is not an object: {}", self.left.to_string()))
+                }
+            };
         }
 
         let left = self.left.evaluate(scope)?;

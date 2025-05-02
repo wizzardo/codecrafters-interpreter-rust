@@ -6,6 +6,7 @@ struct LexemeIterator {
     position: usize,
     limit: usize,
     lexemes: Vec<Lexeme>,
+    in_class: bool,
 }
 
 impl LexemeIterator {
@@ -14,6 +15,7 @@ impl LexemeIterator {
             position: 0,
             limit: lexemes.len(),
             lexemes,
+            in_class: false,
         }
     }
     fn peek(&self) -> Option<&Lexeme> {
@@ -38,6 +40,12 @@ impl LexemeIterator {
     }
     fn advance(&mut self) {
         self.position += 1;
+    }
+    fn is_in_class(&self) -> bool {
+        self.in_class
+    }
+    fn set_in_class(&mut self, in_class: bool) {
+        self.in_class = in_class;
     }
 }
 
@@ -76,7 +84,7 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             iterator.advance();
             if iterator.is(Token::LEFT_PAREN) {
                 eprintln!("Can only call functions and classes.");
-                std::process::exit(70);
+                exit(70);
             }
             expression
         } else if lexeme.token == Token::LEFT_PAREN {
@@ -117,6 +125,10 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         } else if lexeme.token == Token::FUN {
             parse_function(iterator)
         } else if lexeme.token == Token::IDENTIFIER || lexeme.token == Token::THIS {
+            if lexeme.token == Token::THIS && !iterator.is_in_class() {
+                eprintln!("Can only use 'this' in a class");
+                exit(65);
+            }
             if let Some(next) = iterator.peek_n(1) {
                 if next.token == Token::LEFT_PAREN {
                     parse_function_call(iterator)
@@ -614,6 +626,7 @@ fn parse_var(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 }
 
 fn parse_class(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
+    iterator.set_in_class(true);
     let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
     let name = iterator.peek().expect("expected a class name");
@@ -636,7 +649,7 @@ fn parse_class(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         exit(65);
     }
     iterator.advance();
-
+    iterator.set_in_class(false);
     Box::new(ClassDeclarationExpression::new(lexeme, name, methods))
 }
 

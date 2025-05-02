@@ -16,6 +16,8 @@ pub trait Expression {
     fn to_variable(&self) -> Option<&VariableExpression> {
         None
     }
+
+    #[allow(unused)]
     fn to_function_call(&self) -> Option<&FunctionCallExpression> {
         None
     }
@@ -68,7 +70,7 @@ pub trait Object {
     fn as_any(&self) -> &dyn Any;
     fn get_field(&self, field: &String) -> Result<Value, String>;
     fn set_field(&mut self, field: &String, value: Value) -> Result<Value, String>;
-    fn call(&mut self, method: &String, args: Vec<Value>) -> Result<Value, String>;
+    fn call(&self, method: &String, args: Vec<Value>) -> Result<Value, String>;
 }
 
 pub struct SimpleClass {
@@ -141,7 +143,15 @@ impl Object for SimpleObject {
         self.fields.define(field.clone(), value.clone());
         Ok(value)
     }
-    fn call(&mut self, method: &String, args: Vec<Value>) -> Result<Value, String> {
+    fn call(&self, method: &String, args: Vec<Value>) -> Result<Value, String> {
+        if let Some(f) = self.fields.get(method) {
+            return match &(*f.borrow()) {
+                Value::Function(f) => {
+                    f.evaluate(args)
+                },
+                _ => Err(format!("Field '{}' is not a function", method))
+            }
+        }
         let mut scope = self.fields.subscope();
         let result = self.class.invoke(method, &mut scope, args);
         result
@@ -290,6 +300,33 @@ impl ClassDeclarationExpression {
 }
 
 #[allow(unused)]
+pub struct GetFieldExpression {
+    lexeme: Lexeme,
+    object: Box<dyn Expression>,
+    field: String,
+}
+
+impl GetFieldExpression {
+    pub fn new(lexeme: Lexeme, object: Box<dyn Expression>, field: String) -> Self {
+        GetFieldExpression { lexeme, object, field }
+    }
+}
+
+#[allow(unused)]
+pub struct MethodCallExpression {
+    lexeme: Lexeme,
+    object: Box<dyn Expression>,
+    method: String,
+    args: Vec<Box<dyn Expression>>
+}
+
+impl MethodCallExpression {
+    pub fn new(lexeme: Lexeme, object: Box<dyn Expression>, method: String, args: Vec<Box<dyn Expression>>) -> Self {
+        MethodCallExpression { lexeme, object, method, args }
+    }
+}
+
+#[allow(unused)]
 pub struct SetFieldExpression {
     lexeme: Lexeme,
     object: Box<dyn Expression>,
@@ -315,6 +352,7 @@ impl VariableExpression {
         VariableExpression { lexeme, name, binded: RefCell::new(None) }
     }
 
+    #[allow(unused)]
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
@@ -766,6 +804,56 @@ impl Expression for ClassDeclarationExpression {
     }
 }
 
+impl Expression for GetFieldExpression {
+    fn to_string(&self) -> String {
+        format!("{}.{}", self.object.to_string(), self.field)
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let object = self.object.evaluate(scope)?;
+        match object {
+            Value::Object(o) => {
+                o.borrow().get_field(&self.field)
+            }
+            v => {
+                Err(format!("Cannot get field {} from not an object {} at line {}", self.field, v.to_string(), self.lexeme.line))
+            }
+        }
+    }
+
+    fn resolve(&self, _scope: &mut Scope) -> Result<(), String> {
+        // let _ = self.evaluate(scope)?;
+        Ok(())
+    }
+}
+
+impl Expression for MethodCallExpression {
+    fn to_string(&self) -> String {
+        format!("{}.{}()", self.object.to_string(), self.method)
+    }
+
+    fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
+        let object = self.object.evaluate(scope)?;
+        match object {
+            Value::Object(o) => {
+                let mut args = Vec::with_capacity(self.args.len());
+                for a in &self.args {
+                    args.push(a.evaluate(scope)?);
+                }
+                o.borrow().call(&self.method, args)
+            }
+            v => {
+                Err(format!("Cannot call method {} from not an object {} at line {}", self.method, v.to_string(), self.lexeme.line))
+            }
+        }
+    }
+
+    fn resolve(&self, _scope: &mut Scope) -> Result<(), String> {
+        // let _ = self.evaluate(scope)?;
+        Ok(())
+    }
+}
+
 impl Expression for SetFieldExpression {
     fn to_string(&self) -> String {
         format!("{}.{}", self.object.to_string(), self.field)
@@ -1005,7 +1093,6 @@ impl Expression for BinaryExpression {
             Token::EQUAL_EQUAL => { "==" }
             Token::BANG_EQUAL => { "!=" }
             Token::EQUAL => { "=" }
-            Token::DOT => { "." }
             Token::OR => { "or" }
             Token::AND => { "and" }
             t => { panic!("{:?} is not an action for binary expression", t) }
@@ -1040,29 +1127,6 @@ impl Expression for BinaryExpression {
             } else {
                 return Ok(Value::Primitive(Primitive::Boolean(false)));
             }
-        }
-
-        if self.lexeme.token == Token::DOT {
-            let left = self.left.evaluate(scope)?;
-            return match (left, self.right.to_variable()) {
-                (Value::Object(o), Some(field)) => {
-                    o.borrow().get_field(&field.name)
-                }
-                (Value::Object(o), None) => {
-                    if let Some(m) = self.right.to_function_call() {
-                        let mut args = Vec::with_capacity(m.args.len());
-                        for a in &m.args {
-                            args.push(a.evaluate(scope)?);
-                        }
-                        o.borrow_mut().call(&m.name, args)
-                    } else {
-                        Err(format!("right part is not an identifier: {}", self.right.to_string()))
-                    }
-                }
-                (_, _) => {
-                    Err(format!("left part is not an object: {}", self.left.to_string()))
-                }
-            };
         }
 
         let left = self.left.evaluate(scope)?;

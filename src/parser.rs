@@ -1,4 +1,4 @@
-use crate::expression::{AnonymousFunctionCallExpression, BinaryExpression, BlockExpression, ClassDeclarationExpression, Expression, ForExpression, FunctionCallExpression, FunctionDefinitionExpression, GroupExpression, IfExpression, LiteralExpression, MethodDefinition, NoopExpression, PrintExpression, ReturnExpression, SetFieldExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
+use crate::expression::{AnonymousFunctionCallExpression, BinaryExpression, BlockExpression, ClassDeclarationExpression, Expression, ForExpression, FunctionCallExpression, FunctionDefinitionExpression, GetFieldExpression, GroupExpression, IfExpression, LiteralExpression, MethodCallExpression, MethodDefinition, NoopExpression, PrintExpression, ReturnExpression, SetFieldExpression, UnaryMinusExpression, UnaryNotExpression, VariableDeclarationExpression, VariableExpression, WhileExpression};
 use crate::primitive::Primitive;
 use crate::tokenizer::{Lexeme, Token};
 
@@ -50,6 +50,14 @@ pub fn parse_statements(lexemes: Vec<Lexeme>) -> Vec<Box<dyn Expression>> {
     let mut iterator = LexemeIterator::from(lexemes);
     let mut statements: Vec<Box<dyn Expression>> = vec![];
     loop {
+        if iterator.is(Token::SEMICOLON) {
+            iterator.advance();
+            continue;
+        }
+        if iterator.peek().is_none() {
+            break
+        }
+
         let exp = parse(&mut iterator);
         statements.push(exp);
         if iterator.peek().is_none() {
@@ -62,7 +70,7 @@ pub fn parse_statements(lexemes: Vec<Lexeme>) -> Vec<Box<dyn Expression>> {
 fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let mut operands: Vec<Box<dyn Expression>> = vec![];
     let mut operations: Vec<Lexeme> = vec![];
-    while let Some(lexeme) = iterator.peek() {
+    'outer: while let Some(lexeme) = iterator.peek() {
         let expression = if lexeme.token.is_literal() {
             let expression = to_literal_expression(lexeme);
             iterator.advance();
@@ -72,11 +80,16 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             }
             expression
         } else if lexeme.token == Token::LEFT_PAREN {
-            let mut e = parse_group(iterator);
-            while iterator.is(Token::LEFT_PAREN) {
-                e = parse_anonymous_function_call(iterator, e);
+            if operands.len() > operations.len() {
+                let e = operands.pop().unwrap();
+                parse_anonymous_function_call(iterator, e)
+            } else {
+                let mut e = parse_group(iterator);
+                while iterator.is(Token::LEFT_PAREN) {
+                    e = parse_anonymous_function_call(iterator, e);
+                }
+                e
             }
-            e
         } else if lexeme.token == Token::IF {
             parse_if(iterator)
         } else if lexeme.token == Token::WHILE {
@@ -96,17 +109,17 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         } else if lexeme.token == Token::VAR {
             parse_var(iterator)
         } else if lexeme.token == Token::CLASS {
-            parse_class(iterator)
+            if operands.len() != 0 {
+                eprintln!("Can only declare a class at the top level");
+                exit(65);
+            }
+            return parse_class(iterator)
         } else if lexeme.token == Token::FUN {
             parse_function(iterator)
-        } else if lexeme.token == Token::IDENTIFIER {
+        } else if lexeme.token == Token::IDENTIFIER || lexeme.token == Token::THIS {
             if let Some(next) = iterator.peek_n(1) {
                 if next.token == Token::LEFT_PAREN {
-                    let mut e = parse_function_call(iterator);
-                    while iterator.is(Token::LEFT_PAREN) {
-                        e = parse_anonymous_function_call(iterator, e);
-                    }
-                    e
+                    parse_function_call(iterator)
                 } else {
                     parse_identifier(iterator)
                 }
@@ -115,36 +128,63 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             }
         } else if lexeme.token == Token::SEMICOLON {
             iterator.advance();
-            if operands.is_empty() {
-                std::process::exit(65);
-            }
             break;
         } else {
+            if operands.len() > operations.len() {
+                break
+            }
             eprintln!("unexpected token {:?}", lexeme.token);
-            std::process::exit(65);
+            exit(65);
         };
 
         operands.push(expression);
-        match iterator.peek() {
-            None => {
-                // return expression
-                break
-            }
-            Some(lexeme) => {
-                if lexeme.token == Token::SEMICOLON {
-                    iterator.advance();
-                    break;
+        loop {
+            match iterator.peek() {
+                None => {
+                    // return expression
+                    break 'outer
                 }
-                if lexeme.token.is_binary_operator() {
-                    let lexeme = lexeme.clone();
-                    operations.push(lexeme);
-                    iterator.advance();
-                    // let right = parse(iterator);
-                    // break
-                    // return Box::new(BinaryExpression { lexeme, left, right });
-                } else {
-                    // return expression;
-                    break;
+                Some(lexeme) => {
+                    if lexeme.token == Token::SEMICOLON {
+                        // iterator.advance();
+                        break 'outer;
+                    }
+                    if lexeme.token == Token::DOT && iterator.is_n(1, Token::IDENTIFIER) && iterator.is_n(2, Token::EQUAL) {
+                        let e = operands.pop().unwrap();
+                        iterator.advance(); //skip dot
+                        let name = iterator.peek().expect("expected a field name");
+                        let lexeme = name.clone();
+                        let field = name.src.iter().collect();
+                        iterator.advance();
+                        iterator.advance(); //skip =
+                        let value = parse(iterator);
+                        let x = Box::new(SetFieldExpression::new(lexeme, e, field, value));
+                        operands.push(x);
+                        break 'outer;
+                    }
+                    if lexeme.token == Token::DOT && iterator.is_n(1, Token::IDENTIFIER) && iterator.is_n(2, Token::LEFT_PAREN) {
+                        let object = operands.pop().unwrap();
+                        operands.push(parse_method_call(iterator, object));
+                        continue;
+                    }
+                    if lexeme.token == Token::DOT && iterator.is_n(1, Token::IDENTIFIER) {
+                        let e = operands.pop().unwrap();
+                        operands.push(parse_field_access(iterator, e));
+                        continue;
+                    }
+                    if lexeme.token == Token::LEFT_PAREN {
+                        let e = operands.pop().unwrap();
+                        operands.push(parse_anonymous_function_call(iterator, e));
+                        break 'outer;
+                    }
+                    if lexeme.token.is_binary_operator() {
+                        let lexeme = lexeme.clone();
+                        operations.push(lexeme);
+                        iterator.advance();
+                        break
+                    } else {
+                        break 'outer;
+                    }
                 }
             }
         }
@@ -152,10 +192,45 @@ fn parse(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if operands.len() == 1 {
         return operands.into_iter().next().unwrap();
     } else if operands.len() == 0 {
-        panic!("no expression found")
+        eprintln!("no expression found");
+        exit(65);
     } else {
         create_binary(operands, operations)
     }
+}
+
+fn parse_method_call(iterator: &mut LexemeIterator, object: Box<dyn Expression>) -> Box<dyn Expression> {
+    iterator.advance(); //skip dot
+    let name = iterator.peek().expect("expected a method name");
+    let lexeme = name.clone();
+    let field = name.src.iter().collect();
+    iterator.advance();
+    iterator.advance(); //skip (
+
+    let mut args = vec![];
+    while let Some(l) = iterator.peek() {
+        if l.token == Token::RIGHT_PAREN {
+            break;
+        }
+
+        let var = parse(iterator);
+        args.push(var);
+
+        if iterator.is(Token::COMMA) {
+            iterator.advance();
+        } else if !iterator.is(Token::RIGHT_PAREN) {
+            eprintln!("expected ',' or ')' after argument name, but was {:?}", iterator.peek().map(|t| t.token));
+            exit(65);
+        }
+    }
+
+    if !iterator.is(Token::RIGHT_PAREN) {
+        eprintln!("expected ) after function name");
+        exit(65);
+    }
+    iterator.advance();
+
+    Box::new(MethodCallExpression::new(lexeme, object, field, args))
 }
 
 fn create_binary(mut operands: Vec<Box<dyn Expression>>, mut operations: Vec<Lexeme>) -> Box<dyn Expression> {
@@ -194,38 +269,10 @@ fn create_binary(mut operands: Vec<Box<dyn Expression>>, mut operations: Vec<Lex
         }
     };
     loop {
-        if operations.len() == 2 && operations[0].token == Token::DOT && operations[1].token == Token::EQUAL {
-            let value = operands.remove(2);
-            let field = operands.remove(1);
-            let object = operands.remove(0);
-
-            match field.to_variable() {
-                None => {
-                    eprintln!("Cannot interpreter {} as a field at {}", field.to_string(), operations[0].line);
-                    std::process::exit(65);
-                }
-                Some(field) => {
-                    return Box::new(SetFieldExpression::new(operations[0].clone(), object, field.get_name(), value))
-                }
-            }
-        }
-
-        let option = operations.iter().enumerate().find(|(_, it)| {
-            it.token == Token::DOT
-        });
-        match option {
-            None => { break; }
-            Some((i, _)) => {
-                reduce_operation(&mut operands, &mut operations, i);
-            }
-        }
-    };
-    loop {
         if operations.is_empty() {
             break;
         }
 
-        // should be '=' as last operations, reverse order here
         let i = operations.len() - 1;
         reduce_operation(&mut operands, &mut operations, i);
     };
@@ -234,14 +281,6 @@ fn create_binary(mut operands: Vec<Box<dyn Expression>>, mut operations: Vec<Lex
 }
 
 fn reduce_operation(operands: &mut Vec<Box<dyn Expression>>, operations: &mut Vec<Lexeme>, i: usize) {
-    while i + 1 < operations.len() && operations[i + 1].token == Token::DOT {
-        let lexeme = operations.remove(i + 1);
-        let left = operands.remove(i + 1);
-        let right = operands.remove(i + 1);
-        let exp = BinaryExpression::new(lexeme, left, right);
-        operands.insert(i + 1, Box::new(exp));
-    }
-
     let lexeme = operations.remove(i);
     let left = operands.remove(i);
     let right = operands.remove(i);
@@ -276,7 +315,7 @@ fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if let Some(l) = iterator.peek() {
         if l.token == Token::RIGHT_PAREN {
             eprintln!("empty group expression");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
@@ -285,12 +324,12 @@ fn parse_group(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     match iterator.peek() {
         None => {
             eprintln!("unclosed group expression");
-            std::process::exit(65);
+            exit(65);
         }
         Some(lexeme) => {
             if lexeme.token != Token::RIGHT_PAREN {
                 eprintln!("{:?} != Token::RIGHT_PAREN", lexeme.token);
-                std::process::exit(65);
+                exit(65);
             }
 
             end = lexeme.clone();
@@ -305,7 +344,7 @@ fn parse_if(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if let Some(l) = iterator.peek() {
         if l.token != Token::LEFT_PAREN {
             eprintln!("condition block expected");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
@@ -313,7 +352,7 @@ fn parse_if(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if let Some(l) = iterator.peek() {
         if l.token == Token::RIGHT_PAREN {
             eprintln!("empty if condition");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
@@ -321,18 +360,21 @@ fn parse_if(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     match iterator.peek() {
         None => {
             eprintln!("unclosed if condition");
-            std::process::exit(65);
+            exit(65);
         }
         Some(lexeme) => {
             if lexeme.token != Token::RIGHT_PAREN {
                 eprintln!("{:?} != Token::RIGHT_PAREN", lexeme.token);
-                std::process::exit(65);
+                exit(65);
             }
         }
     };
     iterator.advance();
 
     let body = parse(iterator);
+    if iterator.is(Token::SEMICOLON) {
+        iterator.advance();
+    }
     let else_body = match iterator.peek() {
         None => { None }
         Some(lexeme) => {
@@ -344,6 +386,9 @@ fn parse_if(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             }
         }
     };
+    if iterator.is(Token::SEMICOLON) {
+        iterator.advance();
+    }
     Box::new(IfExpression::new(condition, body, else_body))
 }
 
@@ -352,7 +397,7 @@ fn parse_while(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if let Some(l) = iterator.peek() {
         if l.token != Token::LEFT_PAREN {
             eprintln!("condition block expected");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
@@ -360,7 +405,7 @@ fn parse_while(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if let Some(l) = iterator.peek() {
         if l.token == Token::RIGHT_PAREN {
             eprintln!("empty while condition");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
@@ -368,12 +413,12 @@ fn parse_while(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     match iterator.peek() {
         None => {
             eprintln!("unclosed while condition");
-            std::process::exit(65);
+            exit(65);
         }
         Some(lexeme) => {
             if lexeme.token != Token::RIGHT_PAREN {
                 eprintln!("{:?} != Token::RIGHT_PAREN", lexeme.token);
-                std::process::exit(65);
+                exit(65);
             }
         }
     };
@@ -388,7 +433,7 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if let Some(l) = iterator.peek() {
         if l.token != Token::LEFT_PAREN {
             eprintln!("condition block expected");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
@@ -396,7 +441,7 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     if let Some(l) = iterator.peek() {
         if l.token == Token::RIGHT_PAREN {
             eprintln!("empty for condition");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
@@ -404,7 +449,7 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let before = if let Some(l) = iterator.peek() {
         if l.token == Token::LEFT_BRACE {
             eprintln!("BlockExpression cannot be used as init for FOR expression");
-            std::process::exit(65);
+            exit(65);
         }
         if l.token == Token::SEMICOLON {
             iterator.advance();
@@ -414,22 +459,38 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         }
     } else {
         eprintln!("unexpected end of FOR statement");
-        std::process::exit(65);
+        exit(65);
     };
+
+    if before.is_some() {
+        if !iterator.is(Token::SEMICOLON) {
+            eprintln!("should be ';' after for init, but was {:?}", iterator.peek().map(|t| t.token));
+            exit(65);
+        } else {
+            iterator.advance();
+        }
+    }
 
     if let Some(l) = iterator.peek() {
         if l.token == Token::LEFT_BRACE {
             eprintln!("BlockExpression cannot be used as condition for FOR expression");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
     let condition = parse(iterator);
 
+    if !iterator.is(Token::SEMICOLON) {
+        eprintln!("should be ';' after for condition, but was {:?}", iterator.peek().map(|t| t.token));
+        exit(65);
+    } else {
+        iterator.advance();
+    }
+
     let after = if let Some(l) = iterator.peek() {
         if l.token == Token::LEFT_BRACE {
             eprintln!("BlockExpression cannot be used as after for FOR expression");
-            std::process::exit(65);
+            exit(65);
         }
         if l.token == Token::RIGHT_PAREN {
             None
@@ -438,18 +499,22 @@ fn parse_for(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         }
     } else {
         eprintln!("unexpected end of FOR statement");
-        std::process::exit(65);
+        exit(65);
     };
+
+    if iterator.is(Token::SEMICOLON) {
+        iterator.advance();
+    }
 
     match iterator.peek() {
         None => {
             eprintln!("unclosed while condition");
-            std::process::exit(65);
+            exit(65);
         }
         Some(lexeme) => {
             if lexeme.token != Token::RIGHT_PAREN {
                 eprintln!("{:?} != Token::RIGHT_PAREN", lexeme.token);
-                std::process::exit(65);
+                exit(65);
             }
         }
     };
@@ -471,12 +536,14 @@ fn parse_block(iterator: &mut LexemeIterator, create_subscope_on_execution: bool
     let mut expressions = vec![];
     let end: Lexeme;
     loop {
-        let expression = parse(iterator);
-        expressions.push(expression);
+        if iterator.is(Token::SEMICOLON) {
+            iterator.advance();
+            continue
+        }
         match iterator.peek() {
             None => {
                 eprintln!("unclosed block expression");
-                std::process::exit(65);
+                exit(65);
             }
             Some(lexeme) => {
                 if lexeme.token == Token::RIGHT_BRACE {
@@ -485,6 +552,9 @@ fn parse_block(iterator: &mut LexemeIterator, create_subscope_on_execution: bool
                 }
             }
         };
+
+        let expression = parse(iterator);
+        expressions.push(expression);
     }
     iterator.advance();
     Box::new(BlockExpression::new(start, end, expressions, create_subscope_on_execution))
@@ -538,7 +608,7 @@ fn parse_var(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
         }
         _ => {
             println!("expected '=' or ';' after variable name");
-            std::process::exit(65);
+            exit(65);
         }
     }
 }
@@ -552,7 +622,7 @@ fn parse_class(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 
     if !iterator.is(Token::LEFT_BRACE) {
         eprintln!("expected {{ after class name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
@@ -563,7 +633,7 @@ fn parse_class(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 
     if !iterator.is(Token::RIGHT_BRACE) {
         eprintln!("expected }} after class name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
@@ -591,7 +661,7 @@ fn parse_function_definition(iterator: &mut LexemeIterator) -> (String, Vec<Stri
 
     if !iterator.is(Token::LEFT_PAREN) {
         eprintln!("expected ( after function name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
@@ -609,19 +679,19 @@ fn parse_function_definition(iterator: &mut LexemeIterator) -> (String, Vec<Stri
             iterator.advance();
         } else if !iterator.is(Token::RIGHT_PAREN) {
             eprintln!("expected ',' or ')' after argument name");
-            std::process::exit(65);
+            exit(65);
         }
     }
 
     if !iterator.is(Token::RIGHT_PAREN) {
         eprintln!("expected ) after function name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
     if !iterator.is(Token::LEFT_BRACE) {
         eprintln!("expected {{ after function arguments");
-        std::process::exit(65);
+        exit(65);
     }
     let body = parse_block(iterator, false);
     (name, args, body)
@@ -634,6 +704,16 @@ fn parse_identifier(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     Box::new(VariableExpression::new(lexeme.clone(), name))
 }
 
+fn parse_field_access(iterator: &mut LexemeIterator, object: Box<dyn Expression>) -> Box<dyn Expression> {
+    iterator.advance();
+    let lexeme = iterator.peek().unwrap().clone();
+    let name = iterator.peek().expect("expected a field name");
+    let field = name.src.iter().collect();
+    iterator.advance();
+
+    Box::new(GetFieldExpression::new(lexeme, object, field))
+}
+
 fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
     let name = lexeme.src.iter().collect();
@@ -641,7 +721,7 @@ fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 
     if !iterator.is(Token::LEFT_PAREN){
         eprintln!("expected ( after function name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
@@ -658,13 +738,13 @@ fn parse_function_call(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             iterator.advance();
         } else if !iterator.is(Token::RIGHT_PAREN) {
             eprintln!("expected ',' or ')' after argument name, but was {:?}", iterator.peek().map(|t| t.token));
-            std::process::exit(65);
+            exit(65);
         }
     }
 
     if !iterator.is(Token::RIGHT_PAREN){
         eprintln!("expected ) after function name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
@@ -675,7 +755,7 @@ fn parse_anonymous_function_call(iterator: &mut LexemeIterator, fun: Box<dyn Exp
     let lexeme = iterator.peek().unwrap().clone();
     if !iterator.is(Token::LEFT_PAREN){
         eprintln!("expected ( after function name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
@@ -692,13 +772,13 @@ fn parse_anonymous_function_call(iterator: &mut LexemeIterator, fun: Box<dyn Exp
             iterator.advance();
         } else if !iterator.is(Token::RIGHT_PAREN) {
             eprintln!("expected ',' or ')' after argument name, but was {:?}", iterator.peek().map(|t| t.token));
-            std::process::exit(65);
+            exit(65);
         }
     }
 
     if !iterator.is(Token::RIGHT_PAREN){
         eprintln!("expected ) after function name");
-        std::process::exit(65);
+        exit(65);
     }
     iterator.advance();
 
@@ -721,4 +801,8 @@ fn to_literal_expression(lexeme: &Lexeme) -> Box<LiteralExpression> {
         _ => { panic!("{:?} is not a literal", lexeme.token) }
     };
     Box::new(LiteralExpression::new(lexeme.clone(), literal))
+}
+
+fn exit(code: i32) -> ! {
+    std::process::exit(code)
 }

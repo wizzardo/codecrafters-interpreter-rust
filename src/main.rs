@@ -299,6 +299,23 @@ mod tests {
     }
 
     #[test]
+    fn test_parenthesis() {
+        let (lexemes, _) = tokenize(r##"
+            var a = "bar";
+            var b = "bar";
+            (a = false) or (b = true) or (a = "foo");
+            a
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let mut scope = Scope::new();
+        for exp in expressions {
+            exp.evaluate(&mut scope).unwrap();
+        }
+        assert_eq!("false", scope.get(&"a".to_string()).expect("expect variable to be there").borrow().to_string());
+    }
+
+    #[test]
     fn test_run_for_1() {
         let (lexemes, _) = tokenize(r##"
             var a = 0;
@@ -617,6 +634,50 @@ mod tests {
     }
 
     #[test]
+    fn test_class_set_get_field2() {
+        let (lexemes, _) = tokenize(r##"
+            class Robot {}
+            var r2d2 = Robot();
+            r2d2.model = "Astromech";
+            r2d2.operational = true;
+            
+            if (r2d2.operational) {
+              r2d2.mission = "Navigate hyperspace";
+            }
+            r2d2.mission
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = evaluate(Scope::new(), &expressions).unwrap();
+        assert_eq!(format!("Navigate hyperspace"), result.to_string());
+    }
+
+    #[test]
+    fn test_class_set_get_field3() {
+        let (lexemes, _) = tokenize(r##"
+            class Superhero {}
+            var batman = Superhero();
+            var superman = Superhero();
+            
+            batman.name = "Batman";
+            batman.called = 69;
+            
+            superman.name = "Superman";
+            superman.called = 51;
+            
+            print "Times " + superman.name + " was called: ";
+            print superman.called;
+            print "Times " + batman.name + " was called: ";
+            print batman.called;
+            batman.called + superman.called;
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = evaluate(Scope::new(), &expressions).unwrap();
+        assert_eq!(format!("120"), result.to_string());
+    }
+
+    #[test]
     fn test_class_call_detached_method() {
         let (lexemes, _) = tokenize(r##"
             class Wizard {
@@ -633,5 +694,35 @@ mod tests {
         let expressions = parse_statements(lexemes);
         let result = evaluate(Scope::new(), &expressions).unwrap();
         assert_eq!(format!("Casting a magical spell: Fireball"), result.to_string());
+    }
+
+    #[test]
+    fn test_class_call_closure() {
+        let (lexemes, _) = tokenize(r##"
+            class Wizard {
+              getSpellCaster() {
+                fun castSpell() {
+                  return "Casting spell as " + this.name;
+                }
+                return castSpell;
+              }
+            }
+
+            var wizard = Wizard();
+            wizard.name = "Merlin";
+            wizard.getSpellCaster()();
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let r = evaluate(Scope::new(), &expressions);
+        match r {
+            Ok(result) => {
+                assert_eq!(format!("Casting spell as Merlin"), result.to_string());       
+            }
+            Err(err) => {
+                eprintln!("{}", err.to_string()); 
+                assert!(false);  
+            }
+        }
     }
 }

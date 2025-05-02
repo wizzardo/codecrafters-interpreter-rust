@@ -396,7 +396,7 @@ mod tests {
         let expressions = parse_statements(lexemes);
         assert_eq!(1, expressions.len());
         assert_eq!("print clock()", expressions[0].to_string());
-        let mut scope = Scope::new();
+        let scope = Scope::new();
 
         let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs() as f64;
 
@@ -724,5 +724,27 @@ mod tests {
                 assert!(false);  
             }
         }
+    }
+
+    #[test]
+    fn test_class_call_constructor() {
+        let (lexemes, _) = tokenize(r##"
+            class Counter {
+              init(startValue) {
+                if (startValue < 0) {
+                  this.count = 0;
+                } else {
+                  this.count = startValue;
+                }
+              }
+            }
+            
+            var instance = Counter(-92);
+            instance.init(92).count;
+        "##.chars());
+
+        let expressions = parse_statements(lexemes);
+        let result = evaluate(Scope::new(), &expressions).unwrap();
+        assert_eq!(format!("92"), result.to_string());
     }
 }

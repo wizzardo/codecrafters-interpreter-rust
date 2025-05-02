@@ -74,7 +74,7 @@ impl Scope {
     pub fn pop_scope(&mut self) {
         self.current = self.current.parent.as_ref().unwrap().clone();
     }
-    pub fn define(&mut self, key: String, value: Value) {
+    pub fn define(&self, key: String, value: Value) {
         // self.current.data.borrow_mut().insert(key, Rc::new(RefCell::new(value)));
         self.current.data.borrow_mut().entry(key)
             .or_insert_with(|| Rc::new(RefCell::new(Value::Primitive(Primitive::Nil))))

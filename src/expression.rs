@@ -47,10 +47,11 @@ pub trait Method {
 pub trait Class {
     fn to_string(&self) -> String;
     fn invoke(&self, method: &String, this: &mut Scope, args: Vec<Value>) -> Result<Value, String>;
+    fn has_method(&self, method: &String) -> bool;
     fn detach_method(&self, method: &String, this: Scope) -> Result<Value, String>;
 }
 
-pub fn new_instance(class: Arc<Box<dyn Class>>, _args: Vec<Value>) -> Result<Value, String> {
+pub fn new_instance(class: Arc<Box<dyn Class>>, args: Vec<Value>) -> Result<Value, String> {
     let object = SimpleObject {
         class: class.clone(),
         fields: Scope::new(),
@@ -58,6 +59,11 @@ pub fn new_instance(class: Arc<Box<dyn Class>>, _args: Vec<Value>) -> Result<Val
     let arc = Arc::new(RefCell::new(object));
     arc.borrow_mut().fields.define("this".to_string(), Value::Object(arc.clone()));
     arc.borrow_mut().fields.define(class.to_string(), Value::Class(class.clone()));
+    let constructor = "init".to_string();
+    if class.has_method(&constructor) {
+        let mut scope = arc.borrow().fields.subscope();
+        class.invoke(&constructor, &mut scope, args)?;
+    }
     Ok(Value::Object(arc))
 }
 
@@ -69,7 +75,7 @@ pub trait Object {
     #[allow(unused)]
     fn as_any(&self) -> &dyn Any;
     fn get_field(&self, field: &String) -> Result<Value, String>;
-    fn set_field(&mut self, field: &String, value: Value) -> Result<Value, String>;
+    fn set_field(&self, field: &String, value: Value) -> Result<Value, String>;
     fn call(&self, method: &String, args: Vec<Value>) -> Result<Value, String>;
 }
 
@@ -92,6 +98,10 @@ impl Class for SimpleClass {
                 m.evaluate(this, args)
             }
         }
+    }
+
+    fn has_method(&self, method: &String) -> bool {
+        self.methods.contains_key(method)
     }
 
     fn detach_method(&self, method: &String, scope: Scope) -> Result<Value, String> {
@@ -139,7 +149,7 @@ impl Object for SimpleObject {
             }
         }
     }
-    fn set_field(&mut self, field: &String, value: Value) -> Result<Value, String> {
+    fn set_field(&self, field: &String, value: Value) -> Result<Value, String> {
         self.fields.define(field.clone(), value.clone());
         Ok(value)
     }
@@ -834,7 +844,7 @@ impl Expression for MethodCallExpression {
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let object = self.object.evaluate(scope)?;
-        match object {
+        let result = match object.clone() {
             Value::Object(o) => {
                 let mut args = Vec::with_capacity(self.args.len());
                 for a in &self.args {
@@ -845,7 +855,11 @@ impl Expression for MethodCallExpression {
             v => {
                 Err(format!("Cannot call method {} from not an object {} at line {}", self.method, v.to_string(), self.lexeme.line))
             }
+        }?;
+        if self.method.eq("init") {
+            return Ok(object);
         }
+        Ok(result)
     }
 
     fn resolve(&self, _scope: &mut Scope) -> Result<(), String> {
@@ -864,7 +878,7 @@ impl Expression for SetFieldExpression {
         match object {
             Value::Object(o) => {
                 let value = self.value.evaluate(scope)?;
-                o.borrow_mut().set_field(&self.field, value)
+                o.borrow().set_field(&self.field, value)
             }
             v => {
                 Err(format!("Cannot set field {} of not an object {} at line {}", self.object.to_string(), v.to_string(), self.lexeme.line))
@@ -1001,7 +1015,7 @@ impl Expression for FunctionDefinitionExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        let mut function_scope = scope.clone_scope();
+        let function_scope = scope.clone_scope();
         let fun: Arc<Box<dyn Function>> = Arc::new(Box::new(FunctionExpression {
             lexeme: self.lexeme.clone(),
             name: self.name.clone(),

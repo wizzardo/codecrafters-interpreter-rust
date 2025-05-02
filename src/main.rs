@@ -71,7 +71,7 @@ fn main() {
                 let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
                 Ok(Value::from_number(now as f64))
             });
-            scope.define("clock".to_string(), Value::from_function(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
+            scope.define("clock", Value::from_function(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
 
             let statements = parser::parse_statements(lexemes);
             let mut _result;
@@ -403,7 +403,7 @@ mod tests {
         let clock: Box<dyn Fn(Vec<Value>) -> Result<Value, String>> = Box::new(move |_| {
             Ok(Value::from_number(now))
         });
-        scope.define("clock".to_string(), Value::from_function(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
+        scope.define("clock", Value::from_function(Box::new(NativeFunctionExpression::new("clock".to_string(), clock))));
 
         let fun = scope.get(&"clock".to_string()).expect("expect variable to be there");
         let fun = match &(*fun.borrow()) {

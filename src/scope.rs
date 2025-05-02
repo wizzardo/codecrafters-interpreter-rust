@@ -58,7 +58,7 @@ pub struct Scope {
 #[derive(Debug, Clone)]
 struct ScopeNode {
     parent: Option<Rc<ScopeNode>>,
-    data: RefCell<HashMap<String, Rc<RefCell<Value>>>>,
+    data: RefCell<HashMap<Box<str>, Rc<RefCell<Value>>>>,
 }
 
 impl Scope {
@@ -74,16 +74,16 @@ impl Scope {
     pub fn pop_scope(&mut self) {
         self.current = self.current.parent.as_ref().unwrap().clone();
     }
-    pub fn define(&self, key: String, value: Value) {
+    pub fn define(&self, key: &str, value: Value) {
         // self.current.data.borrow_mut().insert(key, Rc::new(RefCell::new(value)));
-        self.current.data.borrow_mut().entry(key)
+        self.current.data.borrow_mut().entry(key.into())
             .or_insert_with(|| Rc::new(RefCell::new(Value::Primitive(Primitive::Nil))))
             .replace(value);
     }
-    pub fn remove(&mut self, key: &String) {
+    pub fn remove(&mut self, key: &str) {
         self.current.data.borrow_mut().remove(key);
     }
-    pub fn set(&mut self, key: &String, value: Value) {
+    pub fn set(&mut self, key: &str, value: Value) {
         let mut node = self.current.as_ref();
         loop {
             let mut map = node.data.borrow_mut();
@@ -102,7 +102,7 @@ impl Scope {
             }
         }
     }
-    pub fn get(&self, key: &String) -> Option<Rc<RefCell<Value>>> {
+    pub fn get(&self, key: &str) -> Option<Rc<RefCell<Value>>> {
         let mut node = self.current.as_ref();
         loop {
             let map = node.data.borrow();
@@ -137,7 +137,7 @@ impl Scope {
         self.current.parent.is_none()
     }
     
-    pub fn is_defined_in_this_scope(&self, key: &String) -> bool {
+    pub fn is_defined_in_this_scope(&self, key: &str) -> bool {
         self.current.data.borrow().contains_key(key)
     }
 }

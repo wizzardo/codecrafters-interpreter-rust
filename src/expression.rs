@@ -40,15 +40,15 @@ pub trait Method {
     fn resolve(&self) -> Result<(), String> { Ok(()) }
     fn get_name(&self) -> &str;
     fn get_lexeme(&self) -> &Lexeme;
-    fn get_args(&self) -> &Vec<String>;
+    fn get_args(&self) -> &Vec<Box<str>>;
     fn get_body(&self) -> Arc<Box<dyn Expression>>;
 }
 
 pub trait Class {
     fn to_string(&self) -> String;
-    fn invoke(&self, method: &String, this: &mut Scope, args: Vec<Value>) -> Result<Value, String>;
-    fn has_method(&self, method: &String) -> bool;
-    fn detach_method(&self, method: &String, this: Scope) -> Result<Value, String>;
+    fn invoke(&self, method: &str, this: &mut Scope, args: Vec<Value>) -> Result<Value, String>;
+    fn has_method(&self, method: &str) -> bool;
+    fn detach_method(&self, method: &str, this: Scope) -> Result<Value, String>;
 }
 
 pub fn new_instance(class: Arc<Box<dyn Class>>, args: Vec<Value>) -> Result<Value, String> {
@@ -57,12 +57,11 @@ pub fn new_instance(class: Arc<Box<dyn Class>>, args: Vec<Value>) -> Result<Valu
         fields: Scope::new(),
     };
     let arc = Arc::new(RefCell::new(object));
-    arc.borrow_mut().fields.define("this".to_string(), Value::Object(arc.clone()));
-    arc.borrow_mut().fields.define(class.to_string(), Value::Class(class.clone()));
-    let constructor = "init".to_string();
-    if class.has_method(&constructor) {
+    arc.borrow_mut().fields.define("this", Value::Object(arc.clone()));
+    arc.borrow_mut().fields.define(class.to_string().as_str(), Value::Class(class.clone()));
+    if class.has_method("init") {
         let mut scope = arc.borrow().fields.subscope();
-        class.invoke(&constructor, &mut scope, args)?;
+        class.invoke("init", &mut scope, args)?;
     }
     Ok(Value::Object(arc))
 }
@@ -74,22 +73,22 @@ pub trait Object {
     }
     #[allow(unused)]
     fn as_any(&self) -> &dyn Any;
-    fn get_field(&self, field: &String) -> Result<Value, String>;
-    fn set_field(&self, field: &String, value: Value) -> Result<Value, String>;
-    fn call(&self, method: &String, args: Vec<Value>) -> Result<Value, String>;
+    fn get_field(&self, field: &str) -> Result<Value, String>;
+    fn set_field(&self, field: &str, value: Value) -> Result<Value, String>;
+    fn call(&self, method: &str, args: Vec<Value>) -> Result<Value, String>;
 }
 
 pub struct SimpleClass {
     name: String,
-    methods: HashMap<String, Box<dyn Method>>,
+    methods: HashMap<Box<str>, Box<dyn Method>>,
 }
 
 impl Class for SimpleClass {
     fn to_string(&self) -> String {
-        self.name.clone()
+        self.name.to_string()
     }
 
-    fn invoke(&self, method: &String, this: &mut Scope, args: Vec<Value>) -> Result<Value, String> {
+    fn invoke(&self, method: &str, this: &mut Scope, args: Vec<Value>) -> Result<Value, String> {
         match self.methods.get(method) {
             None => {
                 Err(format!("Method '{}' not found", method))
@@ -100,11 +99,11 @@ impl Class for SimpleClass {
         }
     }
 
-    fn has_method(&self, method: &String) -> bool {
+    fn has_method(&self, method: &str) -> bool {
         self.methods.contains_key(method)
     }
 
-    fn detach_method(&self, method: &String, scope: Scope) -> Result<Value, String> {
+    fn detach_method(&self, method: &str, scope: Scope) -> Result<Value, String> {
         match self.methods.get(method) {
             None => {
                 Err(format!("Method '{}' not found", method))
@@ -139,7 +138,7 @@ impl Object for SimpleObject {
         format!("{} instance", self.class.to_string())
     }
 
-    fn get_field(&self, field: &String) -> Result<Value, String> {
+    fn get_field(&self, field: &str) -> Result<Value, String> {
         match self.fields.get(field) {
             None => {
                 self.class.detach_method(field, self.fields.subscope())
@@ -149,11 +148,11 @@ impl Object for SimpleObject {
             }
         }
     }
-    fn set_field(&self, field: &String, value: Value) -> Result<Value, String> {
-        self.fields.define(field.clone(), value.clone());
+    fn set_field(&self, field: &str, value: Value) -> Result<Value, String> {
+        self.fields.define(field, value.clone());
         Ok(value)
     }
-    fn call(&self, method: &String, args: Vec<Value>) -> Result<Value, String> {
+    fn call(&self, method: &str, args: Vec<Value>) -> Result<Value, String> {
         if let Some(f) = self.fields.get(method) {
             return match &(*f.borrow()) {
                 Value::Function(f) => {
@@ -386,13 +385,13 @@ impl FunctionCallExpression {
 pub struct FunctionExpression {
     lexeme: Lexeme,
     name: String,
-    args: Vec<String>,
+    args: Vec<Box<str>>,
     body: Arc<Box<dyn Expression>>,
     scope: Scope,
 }
 
 impl FunctionExpression {
-    pub fn _new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>, scope: Scope) -> Self {
+    pub fn _new(lexeme: Lexeme, name: String, args: Vec<Box<str>>, body: Box<dyn Expression>, scope: Scope) -> Self {
         FunctionExpression { lexeme, name, args, body: Arc::new(body), scope }
     }
 }
@@ -401,12 +400,12 @@ impl FunctionExpression {
 pub struct FunctionDefinitionExpression {
     lexeme: Lexeme,
     name: String,
-    args: Vec<String>,
+    args: Vec<Box<str>>,
     body: Arc<Box<dyn Expression>>,
 }
 
 impl FunctionDefinitionExpression {
-    pub fn new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
+    pub fn new(lexeme: Lexeme, name: String, args: Vec<Box<str>>, body: Box<dyn Expression>) -> Self {
         FunctionDefinitionExpression { lexeme, name, args, body: Arc::new(body) }
     }
 }
@@ -416,12 +415,12 @@ impl FunctionDefinitionExpression {
 pub struct MethodDefinition {
     lexeme: Lexeme,
     name: String,
-    args: Vec<String>,
+    args: Vec<Box<str>>,
     body: Arc<Box<dyn Expression>>,
 }
 
 impl MethodDefinition {
-    pub fn new(lexeme: Lexeme, name: String, args: Vec<String>, body: Box<dyn Expression>) -> Self {
+    pub fn new(lexeme: Lexeme, name: String, args: Vec<Box<str>>, body: Box<dyn Expression>) -> Self {
         MethodDefinition { lexeme, name, args, body: Arc::new(body) }
     }
 }
@@ -437,7 +436,7 @@ impl Method for MethodDefinition {
         }
 
         for i in (0..self.args.len()).rev() {
-            this.define(self.args[i].clone(), args.remove(i));
+            this.define(&self.args[i], args.remove(i));
         }
 
         let result = self.body.evaluate(this);
@@ -452,7 +451,7 @@ impl Method for MethodDefinition {
             Err(e) => { Err(e) }
         }
     }
-    fn get_args(&self) -> &Vec<String> {
+    fn get_args(&self) -> &Vec<Box<str>> {
         &self.args
     }
     fn get_body(&self) -> Arc<Box<dyn Expression>> {
@@ -767,7 +766,7 @@ impl Expression for VariableDeclarationExpression {
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
         let value = self.expression.evaluate(scope)?;
-        scope.define(self.name.clone(), value);
+        scope.define(self.name.as_str(), value);
         Ok(Value::Primitive(Primitive::Nil))
     }
 
@@ -776,11 +775,11 @@ impl Expression for VariableDeclarationExpression {
             if scope.is_defined_in_this_scope(&self.name) {
                 return Err(format!("[line {}] Variable {} already defined", self.lexeme.line, self.name));
             }
-            scope.define(self.name.clone(), Value::Uninitialized);
+            scope.define(self.name.as_str(), Value::Uninitialized);
         }
 
         self.expression.resolve(scope)?;
-        scope.define(self.name.clone(), Value::Primitive(Primitive::Nil));
+        scope.define(self.name.as_str(), Value::Primitive(Primitive::Nil));
         Ok(())
     }
 
@@ -795,12 +794,12 @@ impl Expression for ClassDeclarationExpression {
     }
 
     fn evaluate(&self, scope: &mut Scope) -> Result<Value, String> {
-        let mut methods: HashMap<String, Box<dyn Method>> = HashMap::new();
-        self.methods.iter().for_each(|m| { methods.insert(m.name.clone(), Box::new(m.clone())); });
+        let mut methods: HashMap<Box<str>, Box<dyn Method>> = HashMap::new();
+        self.methods.iter().for_each(|m| { methods.insert(m.name.as_str().into(), Box::new(m.clone())); });
         let class: Arc<Box<dyn Class>> = Arc::new(Box::new(SimpleClass { name: self.name.clone(), methods }));
         // let class: Arc<RefCell<dyn Object>> = Arc::new(RefCell::new(ClassObject { class }));
 
-        scope.define(self.name.clone(), Value::Class(class.clone()));
+        scope.define(self.name.as_str(), Value::Class(class.clone()));
 
         Ok(Value::Class(class))
     }
@@ -1023,8 +1022,8 @@ impl Expression for FunctionDefinitionExpression {
             body: self.body.clone(),
             scope: function_scope.clone(),
         }));
-        scope.define(self.name.clone(), Value::Function(fun.clone()));
-        function_scope.define(self.name.clone(), Value::Function(fun.clone()));
+        scope.define(self.name.as_str(), Value::Function(fun.clone()));
+        function_scope.define(self.name.as_str(), Value::Function(fun.clone()));
         Ok(Value::Function(fun.clone()))
     }
 
@@ -1035,12 +1034,12 @@ impl Expression for FunctionDefinitionExpression {
             }
         }
 
-        scope.define("%in function%".to_string(), Value::Primitive(Primitive::Nil));
+        scope.define("%in function%", Value::Primitive(Primitive::Nil));
         let f = self.evaluate(scope)?;
         if let Value::Function(f) = f {
             f.resolve()?;
         }
-        scope.remove(&"%in function%".to_string());
+        scope.remove("%in function%");
         Ok(())
     }
 
@@ -1063,7 +1062,7 @@ impl Function for FunctionExpression {
         scope.push_scope();
 
         for i in (0..self.args.len()).rev() {
-            scope.define(self.args[i].clone(), args.remove(i));
+            scope.define(&self.args[i], args.remove(i));
         }
 
         let result = self.body.evaluate(&mut scope);
@@ -1085,7 +1084,7 @@ impl Function for FunctionExpression {
         scope.push_scope();
 
         for i in (0..self.args.len()).rev() {
-            scope.define(self.args[i].clone(), Value::Primitive(Primitive::Nil));
+            scope.define(&self.args[i], Value::Primitive(Primitive::Nil));
         }
         self.body.resolve(&mut scope)?;
         scope.pop_scope();
@@ -1256,8 +1255,7 @@ impl Expression for ReturnExpression {
     }
 
     fn resolve(&self, scope: &mut Scope) -> Result<(), String> {
-        let key = "%in function%".to_string();
-        match scope.get(&key) {
+        match scope.get("%in function%") {
             None => Err(format!("Cannot return from top level")),
             Some(_) => Ok(())
         }

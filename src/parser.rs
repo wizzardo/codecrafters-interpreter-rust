@@ -683,7 +683,7 @@ fn parse_method(iterator: &mut LexemeIterator) -> MethodDefinition {
     MethodDefinition::new(lexeme, name, args, body)
 }
 
-fn parse_function_definition(iterator: &mut LexemeIterator) -> (String, Vec<String>, Box<dyn Expression>) {
+fn parse_function_definition(iterator: &mut LexemeIterator) -> (String, Vec<Box<str>>, Box<dyn Expression>) {
     let name = iterator.peek().expect("expected a function name");
     let name = name.src.iter().collect();
     iterator.advance();

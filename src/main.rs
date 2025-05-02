@@ -640,7 +640,7 @@ mod tests {
             var r2d2 = Robot();
             r2d2.model = "Astromech";
             r2d2.operational = true;
-            
+
             if (r2d2.operational) {
               r2d2.mission = "Navigate hyperspace";
             }
@@ -658,13 +658,13 @@ mod tests {
             class Superhero {}
             var batman = Superhero();
             var superman = Superhero();
-            
+
             batman.name = "Batman";
             batman.called = 69;
-            
+
             superman.name = "Superman";
             superman.called = 51;
-            
+
             print "Times " + superman.name + " was called: ";
             print superman.called;
             print "Times " + batman.name + " was called: ";
@@ -717,11 +717,11 @@ mod tests {
         let r = evaluate(Scope::new(), &expressions);
         match r {
             Ok(result) => {
-                assert_eq!(format!("Casting spell as Merlin"), result.to_string());       
+                assert_eq!(format!("Casting spell as Merlin"), result.to_string());
             }
             Err(err) => {
-                eprintln!("{}", err.to_string()); 
-                assert!(false);  
+                eprintln!("{}", err.to_string());
+                assert!(false);
             }
         }
     }
@@ -738,7 +738,7 @@ mod tests {
                 }
               }
             }
-            
+
             var instance = Counter(-92);
             instance.init(92).count;
         "##.chars());

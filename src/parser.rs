@@ -7,6 +7,7 @@ struct LexemeIterator {
     limit: usize,
     lexemes: Vec<Lexeme>,
     in_class: bool,
+    can_return_value: bool,
 }
 
 impl LexemeIterator {
@@ -16,6 +17,7 @@ impl LexemeIterator {
             limit: lexemes.len(),
             lexemes,
             in_class: false,
+            can_return_value: true,
         }
     }
     fn peek(&self) -> Option<&Lexeme> {
@@ -601,6 +603,11 @@ fn parse_return(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
             return Box::new(ReturnExpression::new(lexeme, Box::new(LiteralExpression::new(end, Primitive::Nil))))
         }
     }
+    if !iterator.can_return_value {
+        eprintln!("cannot return value from here");
+        exit(65);
+    }
+
     Box::new(ReturnExpression::new(lexeme, parse(iterator)))
 }
 
@@ -656,14 +663,23 @@ fn parse_class(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
 fn parse_function(iterator: &mut LexemeIterator) -> Box<dyn Expression> {
     let lexeme = iterator.peek().unwrap().clone();
     iterator.advance();
+    let parent_can_return_value = iterator.can_return_value;
+    iterator.can_return_value = true;
     let (name, args, body) = parse_function_definition(iterator);
+    iterator.can_return_value = parent_can_return_value;
     Box::new(FunctionDefinitionExpression::new(lexeme, name, args, body))
 }
 
 fn parse_method(iterator: &mut LexemeIterator) -> MethodDefinition {
     let lexeme = iterator.peek().unwrap().clone();
 
+    let name = iterator.peek().expect("expected a function name");
+    let name = name.src.iter().collect::<String>();
+    if name.eq("init") {
+        iterator.can_return_value = false;
+    }
     let (name, args, body) = parse_function_definition(iterator);
+    iterator.can_return_value = true;
     MethodDefinition::new(lexeme, name, args, body)
 }
 
